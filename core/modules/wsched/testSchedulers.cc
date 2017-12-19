@@ -443,6 +443,13 @@ struct SchedFixture {
     int maxActiveChunks{20};
     int priority{2};
 
+private:
+    // These variables MUST be declared before the schedulers below;
+    // They are passed to the schedulers' constructors, in their default initialization.
+    double _maxScanTimeFast{oneHr}; ///< Don't hit time limit in tests.
+    int _examineAllSleep{0}; ///< Don't run _examineThread when 0
+
+public:
     lsst::qserv::memman::MemManNone::Ptr memMan{
         std::make_shared<lsst::qserv::memman::MemManNone>(1, true)};
     wsched::GroupScheduler::Ptr group{std::make_shared<wsched::GroupScheduler>(
@@ -458,10 +465,6 @@ struct SchedFixture {
 
     lsst::qserv::wpublish::QueriesAndChunks::Ptr queries;
     wsched::BlendScheduler::Ptr blend;
-
-private:
-    double _maxScanTimeFast{oneHr}; ///< Don't hit time limit in tests.
-    int _examineAllSleep{0}; ///< Don't run _examineThread when 0
 };
 
 BOOST_AUTO_TEST_CASE(BlendScheduleTest) {
