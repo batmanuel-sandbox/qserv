@@ -19,7 +19,7 @@
  * the GNU General Public License along with this program.  If not,
  * see <http://www.lsstcorp.org/LegalNotices/>.
  */
-
+#if 0
 // Class header
 #include "loader/FileServer.h"
 
@@ -392,6 +392,6 @@ void FileServerConnection::dataSent (const boost::system::error_code &ec,
 
 }}} // namespace lsst::qserv::loader
 
-
+#endif
 
 
