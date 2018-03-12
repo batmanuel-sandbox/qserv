@@ -20,6 +20,8 @@
  * the GNU General Public License along with this program.  If not,
  * see <http://www.lsstcorp.org/LegalNotices/>.
  */
+
+#if 0
 #ifndef LSST_QSERV_LOADER_FILESERVER_H
 #define LSST_QSERV_LOADER_FILESERVER_H
 
@@ -217,3 +219,5 @@ private:
 }}} // namespace lsst::qserv::loader
 
 #endif // LSST_QSERV_LOADER_FILESERVER_H
+
+#endif
