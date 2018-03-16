@@ -1,0 +1,300 @@
+// -*- LSST-C++ -*-
+/*
+ * LSST Data Management System
+ * Copyright 2018 LSST Corporation.
+ *
+ * This product includes software developed by the
+ * LSST Project (http://www.lsst.org/).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the LSST License Statement and
+ * the GNU General Public License along with this program.  If not,
+ * see <http://www.lsstcorp.org/LegalNotices/>.
+ *
+ */
+#ifndef LSST_QSERV_LOADER_LOADERMSG_H_
+#define LSST_QSERV_LOADER_LOADERMSG_H_
+
+// system headers
+#include <arpa/inet.h>
+#include <cstring>
+#include <memory>
+#include <string>
+
+// Qserv headers
+#include "loader/BufferUdp.h"
+
+
+#define MAX_MSG_STRING_LENGTH 5000
+
+
+namespace lsst {
+namespace qserv {
+namespace loader {
+
+
+// Expand to include basic message information &&&
+class LoaderMsgErr : public std::exception {
+public:
+    LoaderMsgErr(std::string const& msg) : _msg(msg) {}
+    const char* what() const throw() override {
+        return _msg.c_str();
+    }
+private:
+    std::string _msg;
+};
+
+
+// Base class for message elements
+class MsgElement {
+public:
+    using Ptr = std::shared_ptr<MsgElement>;
+    enum {
+        NOTHING     = 0,
+        STRING_ELEM = 1,
+        UINT16_ELEM = 2,
+        UINT32_ELEM = 3,
+        UINT64_ELEM = 4
+    };
+
+    explicit MsgElement(char elementType) : _elementType(elementType) {}
+    MsgElement() = delete;
+    MsgElement(MsgElement const&) = delete;
+    MsgElement& operator=(MsgElement const&) = delete;
+    virtual  ~MsgElement() = default;
+
+    virtual bool appendToData(BufferUdp& data)=0;
+    virtual bool retrieveFromData(BufferUdp &data)=0;
+
+    static MsgElement::Ptr create(char elementType);
+
+    static bool retrieveType(BufferUdp &data, char& elemType) {
+        return data.retrieve(&elemType, sizeof(elemType));
+    }
+
+    static MsgElement::Ptr retrieve(BufferUdp& data) {
+        char elemT;
+        if (not retrieveType(data, elemT)) {
+            return nullptr;
+        }
+        MsgElement::Ptr msgElem = create(elemT);
+        if (msgElem != nullptr && not msgElem->retrieveFromData(data)) {
+            // No good way to recover from missing data from a know type.
+            throw LoaderMsgErr("static retrieve, incomplete data for type=" +
+                    std::to_string((int)elemT) + " data:" + data.dump());
+        }
+        return msgElem;
+    }
+
+    static bool equal(MsgElement* a, MsgElement* b) {
+        if (a == b) return true;
+        if (a == nullptr || b == nullptr) return false;
+        if (a->_elementType != b->_elementType) { return false; }
+        if (a->_elementType == NOTHING) { return true; }
+        return a->equal(b);
+    }
+
+    char getElementType() { return _elementType; }
+
+    static std::string getStringVal(MsgElement::Ptr const& msgElem) {
+        if (msgElem == nullptr) return std::string("nullptr");
+        return msgElem->getStringVal();
+    }
+
+    virtual std::string getStringVal()=0;
+
+    virtual bool equal(MsgElement* other)=0;
+
+protected:
+    bool _appendType(BufferUdp &data) const {
+        return data.append(&_elementType, sizeof(_elementType));
+    }
+
+
+    const char* _retrieveType(const char* data) {
+        _elementType = *data;
+        const char* ptr = data + 1;
+        return ptr;
+    }
+
+
+
+private:
+    char _elementType{NOTHING};
+};
+
+
+// Generic numeric type for network transmission.
+template <class T, typename = typename std::enable_if<std::is_arithmetic<T>::value, T>::type>
+class NumElement : public MsgElement {
+public:
+    explicit NumElement(char myType) : MsgElement(myType) {}
+    NumElement(char myType, T element_) : MsgElement(myType), element(element_) {}
+    NumElement() = delete;
+    NumElement(NumElement<T> const&) = delete;
+    NumElement& operator=(NumElement<T> const&) = delete;
+
+    bool appendToData(BufferUdp &data) {
+        if (_appendType(data)) {
+            T netElem = changeEndianessOnLittleEndianOnly(element);
+            return data.append(&netElem, _sizeT);
+        }
+        return false;
+    }
+
+
+    bool retrieveFromData(BufferUdp &data) override {
+        T netElem;
+        if (data.retrieve(&netElem, sizeof(T))) {
+            element = changeEndianessOnLittleEndianOnly(netElem);
+            return true;
+        }
+        return false;
+    }
+
+    std::string getStringVal() { return std::to_string(element); }
+
+    T element{0};
+
+    // This function will change endianess only on little endian machines, which should be
+    // effective for big-endian transformation for network communication.
+    T changeEndianessOnLittleEndianOnly(T const& in) {
+        uint8_t data[_sizeT];
+        memcpy(&data, &in, _sizeT);
+        T res = 0;
+        int shift = 0;
+        int pos = _sizeT -1;
+        for (size_t j=0; j < _sizeT; ++j) {
+            res |= static_cast<T>(data[pos]) << shift;
+            shift += 8;
+            --pos;
+        }
+        return res;
+    }
+
+
+    bool equal(MsgElement* other) override {
+            NumElement<T>* ptr = dynamic_cast<NumElement<T>*>(other);
+            if (ptr == nullptr) { return false; }
+            return (ptr->element == ptr->element);
+        }
+
+private:
+    static const size_t _sizeT{sizeof(T)};
+};
+
+
+class UInt16Element : public NumElement<uint16_t> {
+public:
+    using Ptr = std::shared_ptr<UInt16Element>;
+    static const int MYTYPE = UINT16_ELEM;
+
+    UInt16Element() : NumElement(MYTYPE) {}
+    explicit UInt16Element(uint16_t element_) : NumElement(MYTYPE, element_) {}
+    UInt16Element(UInt16Element const&) = delete;
+    UInt16Element& operator=(UInt16Element const&) = delete;
+};
+
+
+class UInt32Element : public NumElement<uint32_t> {
+public:
+    using Ptr = std::shared_ptr<UInt32Element>;
+    static const int MYTYPE = UINT32_ELEM;
+
+    UInt32Element() : NumElement(MYTYPE) {}
+    explicit UInt32Element(uint32_t element_) : NumElement(MYTYPE, element_) {}
+    UInt32Element(UInt32Element const&) = delete;
+    UInt32Element& operator=(UInt32Element const&) = delete;
+};
+
+
+class UInt64Element : public NumElement<uint64_t> {
+public:
+    using Ptr = std::shared_ptr<UInt64Element>;
+    static const int MYTYPE = UINT64_ELEM;
+
+    UInt64Element() : NumElement(MYTYPE) {}
+    explicit UInt64Element(uint64_t element_) : NumElement(MYTYPE, element_) {}
+    UInt64Element(UInt64Element const&) = delete;
+    UInt64Element& operator=(UInt64Element const&) = delete;
+};
+
+
+
+// Using uint16_t for length in all cases.
+class StringElement : public MsgElement {
+public:
+    using Ptr = std::shared_ptr<StringElement>;
+    static const int myType = STRING_ELEM;
+
+    StringElement(std::string const& element_) : MsgElement(myType), element(element_) {}
+    StringElement() : MsgElement(myType) {}
+    StringElement(StringElement const&) = delete;
+    StringElement& operator=(StringElement const&) = delete;
+
+    ~StringElement() override = default;
+
+    bool appendToData(BufferUdp& data) override;
+    bool retrieveFromData(BufferUdp& data) override;
+    std::string getStringVal() override { return element; }
+
+    std::string element;
+
+
+    bool equal(MsgElement* other) override {
+        StringElement* ptr = dynamic_cast<StringElement*>(other);
+        if (ptr == nullptr) { return false; }
+        return (ptr->element == ptr->element);
+    }
+};
+
+
+/// Base class for loader messages.
+/// These messages are meant to be short and simple UDP messages. Long messages
+/// may have difficulty being transmitted successfully.
+class LoaderMsg {
+public:
+    enum {
+        MSG_RECEIVED = 100,    // Standard success/error response to received message.
+        MAST_INFO_REQ,         // Request some information about the master
+        MAST_INFO,             // Information about the master
+        MAST_WORKER_LIST_REQ,  // Request a list of workers from the master.
+        MAST_WORKER_LIST,      // List of all workers known by the master.
+        MAST_WORKER_INFO_REQ,  // Request information for a single worker.
+        MAST_WORKER_INFO,      // All the information the master has about one worker.
+        MAST_WORKER_ADD_REQ,   // Request the Master add the worker. MSG_RECIEVED + MAST_WORKER_INFO
+        WORKER_INSERT_KEY_REQ, // Insert a new key with info. MSG_RECEIVED + KEY_INFO
+        KEY_INFO_REQ,          // Request info for a single key.
+        KEY_INFO               // Information about a specific key. (includes file id and row)
+    };
+
+    LoaderMsg() = default;
+    LoaderMsg(uint16_t kind, uint64_t id, std::string const& host, uint32_t port);
+    LoaderMsg(LoaderMsg const&) = delete;
+    LoaderMsg& operator=(LoaderMsg const&) = delete;
+
+    virtual ~LoaderMsg() = default;
+
+    void parse(BufferUdp& data);
+    void serialize(BufferUdp& data);
+
+    std::string getStringVal();
+
+    UInt16Element::Ptr msgKind;
+    UInt64Element::Ptr msgId;
+    StringElement::Ptr senderHost;
+    UInt32Element::Ptr senderPort;
+};
+
+}}} // namespace lsst::qserv::loader
+
+#endif /* LSST_QSERV_LOADER_LOADERMSG_H_ */
