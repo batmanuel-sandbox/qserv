@@ -27,6 +27,7 @@
 
 // System headers
 #include <iostream>
+#include <unistd.h>
 
 // Third-party headers
 
@@ -41,40 +42,45 @@ namespace lsst {
 namespace qserv {
 namespace loader {
 
+std::atomic<uint64_t> ServerUdpBase::_msgIdSeq{1};
+
 
 ServerUdpBase::ServerUdpBase(boost::asio::io_service& io_service, short port) : _ioService(io_service),
-_socket(io_service, udp::endpoint(udp::v4(), port)) {
-    _socket.async_receive_from(
-        boost::asio::buffer(_data->getBuffer(), _data->getMaxLength()), _senderEndpoint,
-        boost::bind(&ServerUdpBase::_receiveCallBack, this,
-                    boost::asio::placeholders::error,
-                    boost::asio::placeholders::bytes_transferred));
+_socket(io_service, udp::endpoint(udp::v4(), port)), _port(port) {
+    char hName[HOST_NAME_MAX];
+    gethostname(hName, HOST_NAME_MAX);
+    _hostName = hName;
+    _receivePrepare();
 }
 
 
-void ServerUdpBase::_receiveCallBack(boost::system::error_code const& error, size_t bytes_recvd) {
-    _data->setWriteCursor(bytes_recvd); // _data needs to know the valid portion of the buffer.
-    if (!error && bytes_recvd > 0) {
-        std::string str(_data->begin(), bytes_recvd);
+void ServerUdpBase::_receiveCallback(boost::system::error_code const& error, size_t bytesRecvd) {
+    _data->setWriteCursor(bytesRecvd); // _data needs to know the valid portion of the buffer.
+    if (!error && bytesRecvd > 0) {
+        std::string str(_data->begin(), bytesRecvd);
         std::cout << "str len=" << str.length() << std::endl;
-        LOGS(_log, LOG_LVL_INFO, "rCB received(" << bytes_recvd << "):" << str <<
+        LOGS(_log, LOG_LVL_INFO, "rCb received(" << bytesRecvd << "):" << str <<
                                  ", error code: " << error << ", from endpoint " << _senderEndpoint);
 
         _sendData = parseMsg(_data, _senderEndpoint);
-        _sendResponse();
+        if (_sendData != nullptr) {
+            _sendResponse();
+        } else {
+            _receivePrepare();
+        }
     } else {
-        /// TODO - echoing is not good error response behavior.
+        /// &&& TODO - echoing is not good error response behavior.
         _sendData = _data;
         _sendResponse();
     }
-    _data = std::make_shared<BufferUdp>(); // new buffer for next call
+
 }
 
 
 void ServerUdpBase::_sendResponse() {
     _socket.async_send_to(boost::asio::buffer(_sendData->begin(), _sendData->getCurrentWriteLength()),
                                               _senderEndpoint,
-                          boost::bind(&ServerUdpBase::_sendCallBack, this,
+                          boost::bind(&ServerUdpBase::_sendCallback, this,
                                       boost::asio::placeholders::error,
                                       boost::asio::placeholders::bytes_transferred));
 }
@@ -94,12 +100,17 @@ BufferUdp::Ptr ServerUdpBase::parseMsg(BufferUdp::Ptr const& data, udp::endpoint
 }
 
 
-void ServerUdpBase::_sendCallBack(const boost::system::error_code& error, size_t bytes_sent) {
-    LOGS(_log, LOG_LVL_INFO, " _sendCallBack bytes_sent=" << bytes_sent);
+void ServerUdpBase::_sendCallback(const boost::system::error_code& error, size_t bytes_sent) {
+    LOGS(_log, LOG_LVL_INFO, " _sendCallback bytes_sent=" << bytes_sent);
+    _receivePrepare();
+}
+
+void ServerUdpBase::_receivePrepare() {
+    _data = std::make_shared<BufferUdp>(); // new buffer for next response
     _socket.async_receive_from(boost::asio::buffer(_data->getBuffer(), _data->getMaxLength()), _senderEndpoint,
-                               boost::bind(&ServerUdpBase::_receiveCallBack, this,
-                                           boost::asio::placeholders::error,
-                                           boost::asio::placeholders::bytes_transferred));
+                                   boost::bind(&ServerUdpBase::_receiveCallback, this,
+                                               boost::asio::placeholders::error,
+                                               boost::asio::placeholders::bytes_transferred));
 }
 
 

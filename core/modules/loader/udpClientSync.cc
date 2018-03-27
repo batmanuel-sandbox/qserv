@@ -24,15 +24,15 @@ int main(int argc, char* argv[]){
     using namespace lsst::qserv;
 
     try {
-        if (argc != 2) {
-            std::cerr << "Usage: client <host>" << std::endl;
+        if (argc != 3) {
+            std::cerr << "Usage: client <host> <port>" << std::endl;
             return 1;
         }
 
         boost::asio::io_context io_context;
 
         udp::resolver resolver(io_context);
-        udp::endpoint receiverEndpoint = *resolver.resolve(udp::v4(), argv[1], "10042").begin();
+        udp::endpoint receiverEndpoint = *resolver.resolve(udp::v4(), argv[1], argv[2]).begin();
 
         udp::socket socket(io_context);
         socket.open(udp::v4());

@@ -32,18 +32,30 @@
 
 // Qserv headers
 #include "loader/ServerUdpBase.h"
+#include "loader/WorkerList.h"
 
 namespace lsst {
 namespace qserv {
 namespace loader {
 
+class LoaderMsg;
+
 class MasterServer : public ServerUdpBase {
 public:
-    MasterServer(boost::asio::io_service& io_service, short port) : ServerUdpBase(io_service, port) {}
+    MasterServer(boost::asio::io_service& io_service, short port, WorkerList::Ptr const& workerList)
+        : ServerUdpBase(io_service, port), _workerList(workerList) {}
 
     ~MasterServer() override = default;
 
     BufferUdp::Ptr parseMsg(BufferUdp::Ptr const& data, udp::endpoint const& endpoint) override;
+
+
+    BufferUdp::Ptr workerAddRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data, udp::endpoint const& senderEndpoint);
+    BufferUdp::Ptr replyMsgReceivedErr(udp::endpoint const& senderEndpoint, LoaderMsg const& inMsg,
+                                       std::string const& msgTxt);
+
+private:
+    WorkerList::Ptr _workerList;
 };
 
 

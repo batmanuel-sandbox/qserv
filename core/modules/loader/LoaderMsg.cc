@@ -94,8 +94,10 @@ bool StringElement::retrieveFromData(BufferUdp& data) {
     // Get the length.
     uint16_t netLen;
     if (not data.retrieve(&netLen, sizeof(uint16_t))) {
+        LOGS(_log, LOG_LVL_WARN, "retrieveFromData failed to retrieve length");
         return false;
     }
+
     uint16_t len = ntohs(netLen);
 
     // Get the string.
@@ -112,7 +114,7 @@ LoaderMsg::LoaderMsg(uint16_t kind, uint64_t id, std::string const& host, uint32
 }
 
 
-void LoaderMsg::parse(BufferUdp& data) {
+void LoaderMsg::parseFromData(BufferUdp& data) {
     MsgElement::Ptr elem = MsgElement::retrieve(data);
     msgKind = std::dynamic_pointer_cast<UInt16Element>(elem);
     if (msgKind == nullptr) {
@@ -139,7 +141,7 @@ void LoaderMsg::parse(BufferUdp& data) {
 }
 
 
-void LoaderMsg::serialize(BufferUdp& data) {
+void LoaderMsg::serializeToData(BufferUdp& data) {
     bool success = true;
     if (msgKind == nullptr || msgId == nullptr || senderHost == nullptr || senderPort == nullptr) {
         success = false;
@@ -161,7 +163,7 @@ void LoaderMsg::serialize(BufferUdp& data) {
 }
 
 
-std::string LoaderMsg::getStringVal() {
+std::string LoaderMsg::getStringVal() const {
     std::string str("LMsg(");
     str += msgKind->getStringVal() + " " + msgId->getStringVal() + " ";
     str += senderHost->getStringVal() + ":" + senderPort->getStringVal() + ")";

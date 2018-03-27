@@ -161,9 +161,9 @@ public:
         os << "maxLength=" << _length;
 
         os <<   " buffer=" << (long)_buffer;
-        os <<   "wCurLen=" << getCurrentWriteLength();
+        os <<  " wCurLen=" << getCurrentWriteLength();
         os <<  " wCursor=" << (long)_wCursor;
-        os <<   "rCurLen=" << getCurrentReadLength();
+        os <<  " rCurLen=" << getCurrentReadLength();
         os <<  " rCursor=" << (long)_wCursor;
         os <<      " end=" << (long)_end;
 

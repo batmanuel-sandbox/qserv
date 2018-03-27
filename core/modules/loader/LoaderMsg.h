@@ -277,6 +277,11 @@ public:
         KEY_INFO               // Information about a specific key. (includes file id and row)
     };
 
+    enum {
+        STATUS_SUCCESS = 0,
+        STATUS_PARSE_ERR
+    };
+
     LoaderMsg() = default;
     LoaderMsg(uint16_t kind, uint64_t id, std::string const& host, uint32_t port);
     LoaderMsg(LoaderMsg const&) = delete;
@@ -284,10 +289,18 @@ public:
 
     virtual ~LoaderMsg() = default;
 
-    void parse(BufferUdp& data);
-    void serialize(BufferUdp& data);
+    void parseFromData(BufferUdp& data);
+    void serializeToData(BufferUdp& data);
 
-    std::string getStringVal();
+    std::string getStringVal() const;
+
+    size_t getExpectedSize() const {
+        size_t exp = sizeof(msgKind->element);
+        exp += sizeof(msgId->element);
+        exp += senderHost->element.size();
+        exp += sizeof(senderPort->element);
+        return exp;
+    }
 
     UInt16Element::Ptr msgKind;
     UInt64Element::Ptr msgId;

@@ -28,6 +28,8 @@
 // Qserv headers
 #include "loader/LoaderMsg.h"
 #include "loader/MasterServer.h"
+#include "loader/WorkerServer.h"
+#include "proto/loader.pb.h"
 
 // LSST headers
 #include "lsst/log/Log.h"
@@ -149,14 +151,13 @@ int main(int argc, char* argv[]) {
     //////////////////////////////////////////////////////////////////////////////
 
 
-    // test for LoaderMsg serialize and parse (change to just parse(..))
+    // test for LoaderMsg serialize and parse
     LoaderMsg lMsg(LoaderMsg::MAST_INFO_REQ, 1, "127.0.0.1", 9876);
     BufferUdp lBuf;
-    lMsg.serialize(lBuf);
-    //BufferUdpConst cBuf(lBuf.begin(), lBuf.getCurrentLength());  // &&& constructor
+    lMsg.serializeToData(lBuf);
     {
         LoaderMsg outMsg;
-        outMsg.parse(lBuf);
+        outMsg.parseFromData(lBuf);
         if (  lMsg.msgKind->element    != outMsg.msgKind->element    ||
               lMsg.msgId->element      != outMsg.msgId->element      ||
               lMsg.senderHost->element != outMsg.senderHost->element ||
@@ -170,18 +171,92 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    /// &&& Start a udp server & client on separate threads and send some messages.
-    int port = 10042;
-    boost::asio::io_service ioServiceMaster;
 
-    MasterServer mastServ(ioServiceMaster, port);
+    ////////////////////////////////////////////////////////////////////////////
 
-    std::thread mastT([&ioServiceMaster]() { ioServiceMaster.run(); });
+    /// &&& TODO test timeouts. Start a worker server and try to contact master.
+    ///    After a few failures, start master
 
+    WorkerList::Ptr workerList = std::make_shared<WorkerList>();
+
+
+    /// Start a master server
+    std::string masterIP = "127.0.0.1";
+    int masterPort = 10042;
+    boost::asio::io_service ioService;
+
+    std::string worker1IP = "127.0.0.1";
+    int worker1Port = 10043;
+
+    MasterServer mastServ(ioService, masterPort, workerList);
+    std::thread mastT([&ioService]() { ioService.run(); });
+
+
+    /// Start another worker server
+    WorkerServer worker1Serv(ioService, worker1Port);
+    std::thread worker1T([&ioService]() { ioService.run(); });
+
+
+    /// Start another worker server &&&
+
+    std::cout << "***************************************************** &&&" << std::endl;
+    // create a client socket and register the workers.
+    boost::asio::io_context io_context;
+    udp::resolver resolver(io_context);
+    //udp::endpoint receiverEndpoint = *resolver.resolve(udp::v4(), "127.0.0.1", "10042").begin();
+    udp::endpoint masterEndpoint = *resolver.resolve(udp::v4(), masterIP, std::to_string(masterPort)).begin();
+
+    udp::socket socket(io_context);
+    socket.open(udp::v4());
+
+    /// Unknown message kind test. Pretending to be worker1.
+    {
+        uint16_t kind = 6020;
+        LoaderMsg msg(kind, 1, worker1IP, 10042);
+        BufferUdp msgData(128);
+        msg.serializeToData(msgData);
+        // &&& change this to be sent from the worker1Serv port.
+        socket.send_to(boost::asio::buffer(msgData.begin(), msgData.getCurrentWriteLength()), masterEndpoint);
+
+        BufferUdp respBuf;
+        udp::endpoint senderEndpoint;
+        size_t len = socket.receive_from(boost::asio::buffer(respBuf.getBuffer(), respBuf.getMaxLength()), senderEndpoint);
+        respBuf.setWriteCursor(len);
+        std::cout << "******1 respBuf =" << respBuf.dump(true, true) << std::endl;
+    }
+
+    /// Real message, register worker1 with the master
+    // &&& "need to fit the worker's server info into this. probably an optional item in the proto buf";
+    {
+        LoaderMsg msg(LoaderMsg::MAST_WORKER_ADD_REQ, 1, "127.0.0.1", 10042);
+        BufferUdp msgData;
+        msg.serializeToData(msgData);
+        // create the proto buffer
+        lsst::qserv::proto::LdrMastWorkerAddReq protoBuf;
+        protoBuf.set_workerip(worker1IP);
+        protoBuf.set_workerport(worker1Port);
+
+        StringElement addWorkerBuf;
+        protoBuf.SerializeToString(&(addWorkerBuf.element));
+        std::cout << "&&& addWorkerBuf.element a len=" << addWorkerBuf.element.length() << std::endl;
+        std::cout << "&&& msg2Buf a len=" << msgData.getCurrentWriteLength() << std::endl;
+        addWorkerBuf.appendToData(msgData);
+        std::cout << "&&& msg2Buf b len=" << msgData.getCurrentWriteLength() << std::endl;
+
+
+        // &&& change this to be sent from the worker1Serv port.
+        socket.send_to(boost::asio::buffer(msgData.begin(), msgData.getCurrentWriteLength()), masterEndpoint);
+
+        BufferUdp respBuf;
+        udp::endpoint senderEndpoint;
+        size_t len = socket.receive_from(boost::asio::buffer(respBuf.getBuffer(), respBuf.getMaxLength()), senderEndpoint);
+        respBuf.setWriteCursor(len);
+        std::cout << "******2 respBuf =" << respBuf.dump(true, true) << std::endl;
+    }
 
     std::cout << "sleeping" << std::endl;
     sleep(15);
-    ioServiceMaster.stop(); // && this doesn't seem to work
+    //ioService.stop(); // &&& this doesn't seem to work cleanly
     mastT.join();
 
 
