@@ -42,7 +42,7 @@ using boost::asio::ip::udp;
 
 class ServerUdpBase {
 public:
-    ServerUdpBase(boost::asio::io_service& io_service, short port);
+    ServerUdpBase(boost::asio::io_service& io_service, std::string const& host, short port);
 
     ServerUdpBase() = delete;
     ServerUdpBase(ServerUdpBase const&) = delete;

@@ -21,8 +21,8 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  *
  */
-#ifndef LSST_QSERV_LOADER_MASTERSERVER_H_
-#define LSST_QSERV_LOADER_MASTERSERVER_H_
+#ifndef LSST_QSERV_LOADER_WORKERSERVER_H_
+#define LSST_QSERV_LOADER_WORKERSERVER_H_
 
 // system headers
 #include <cstdlib>
@@ -38,32 +38,25 @@ namespace lsst {
 namespace qserv {
 namespace loader {
 
-class LoaderMsg;
-
-class MasterServer : public ServerUdpBase {
+class WorkerServer : public ServerUdpBase {
 public:
-    MasterServer(boost::asio::io_service& io_service, std::string const& host, short port, WorkerList::Ptr const& workerList)
-        : ServerUdpBase(io_service, host, port), _workerList(workerList) {}
+    WorkerServer(boost::asio::io_service& io_service, std::string const& host, short port, WorkerList::Ptr const& workersList)
+        : ServerUdpBase(io_service, host, port), _workersList(workersList) {}
 
-    ~MasterServer() override = default;
+    WorkerServer() = delete;
+
+    ~WorkerServer() override = default;
 
     BufferUdp::Ptr parseMsg(BufferUdp::Ptr const& data, udp::endpoint const& endpoint) override;
 
-
-    BufferUdp::Ptr workerAddRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data, udp::endpoint const& senderEndpoint);
-    BufferUdp::Ptr workerListRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data, udp::endpoint const& senderEndpoint);
-
-    // &&& I'm thinking replies should only be sent on errors and always be sent to the server port. A reply
-    // that gets lost in transmission is going to be a nuisance, requiring extra timeouts.
     BufferUdp::Ptr replyMsgReceived(udp::endpoint const& senderEndpoint, LoaderMsg const& inMsg,
-                                       int status, std::string const& msgTxt); // TODO shows up in both MasterServer and WorkerServer
-
+                                    int status, std::string const& msgTxt); // TODO shows up in both MasterServer and WorkerServer
 
 private:
-    WorkerList::Ptr _workerList;
+    WorkerList::Ptr _workersList;
 };
 
 
 }}} // namespace lsst::qserv::loader
 
-#endif // LSST_QSERV_LOADER_MASTERSERVER_H_
+#endif // LSST_QSERV_LOADER_WORKERSERVER_H_

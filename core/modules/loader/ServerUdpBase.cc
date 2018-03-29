@@ -45,11 +45,14 @@ namespace loader {
 std::atomic<uint64_t> ServerUdpBase::_msgIdSeq{1};
 
 
-ServerUdpBase::ServerUdpBase(boost::asio::io_service& io_service, short port) : _ioService(io_service),
-_socket(io_service, udp::endpoint(udp::v4(), port)), _port(port) {
+ServerUdpBase::ServerUdpBase(boost::asio::io_service& io_service, std::string const& host, short port)
+    : _ioService(io_service), _socket(io_service, udp::endpoint(udp::v4(), port)),
+      _hostName(host), _port(port) {
+    /* &&&
     char hName[HOST_NAME_MAX];
     gethostname(hName, HOST_NAME_MAX);
     _hostName = hName;
+    */
     _receivePrepare();
 }
 

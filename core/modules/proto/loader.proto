@@ -34,14 +34,37 @@ message LdrMsgReceived {
     required uint32 dataentries  = 5;
 }
 
-// Register a worker with the master.
-message LdrMastWorkerAddReq {
+/// Register a worker with the master.    
+message LdrMastWorkerAddReq {       /// Change the name to NetAddress &&&
     required string workerip     = 1;
     required uint32 workerport   = 2;
 }
 
 
+message WorkerRangeString {
+    required string min  = 1; 
+    required string max  = 2;
+}
 
+
+message WorkerRangeInt {
+	required uint64 minint  = 1;
+	required uint64 maxint  = 2; 
+}
+
+
+message WorkerListItem {
+    required uint32 name    = 1; // worker's id number
+    optional LdrMastWorkerAddReq address = 2;  // &&& make required 
+    optional WorkerRangeString rangeStr = 3;
+    optional WorkerRangeInt rangeInt = 4;
+}
+
+
+message LdrMastWorkerList {
+	required uint32         workercount = 1;
+    repeated WorkerListItem worker      = 2;
+}
 
 
 

@@ -73,7 +73,7 @@ BufferUdp::Ptr MasterServer::parseMsg(BufferUdp::Ptr const& data, udp::endpoint 
         // TODO: provide performance information about the master via MAST_INFO
         break;
     case LoaderMsg::MAST_WORKER_LIST_REQ:
-        // TODO: list of known workers via MAST_WORKER_LIST
+        sendData = this->workerListRequest(inMsg, data, senderEndpoint);
         break;
     case LoaderMsg::MAST_WORKER_INFO_REQ:
         // TODO: Request information about a specific worker via MAST_WORKER_INFO
@@ -91,7 +91,7 @@ BufferUdp::Ptr MasterServer::parseMsg(BufferUdp::Ptr const& data, udp::endpoint 
         /// &&& TODO add msg unexpected by master response.
         break;
     default:
-        sendData = replyMsgReceivedErr(senderEndpoint, inMsg, "unknownMsgKind");
+        sendData = replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, "unknownMsgKind");
     }
 #endif
 
@@ -100,11 +100,13 @@ BufferUdp::Ptr MasterServer::parseMsg(BufferUdp::Ptr const& data, udp::endpoint 
 }
 
 
-BufferUdp::Ptr MasterServer::replyMsgReceivedErr(udp::endpoint const& senderEndpoint,
-                                                 LoaderMsg const& inMsg, std::string const& msgTxt) {
+BufferUdp::Ptr MasterServer::replyMsgReceived(udp::endpoint const& senderEndpoint,
+                                                 LoaderMsg const& inMsg, int status, std::string const& msgTxt) {
 
-    LOGS(_log,LOG_LVL_WARN, "Unknown message type from " << senderEndpoint <<
-            " msg=" << msgTxt << " inMsg=" << inMsg.getStringVal());
+    if (status != LoaderMsg::STATUS_SUCCESS) {
+        LOGS(_log,LOG_LVL_WARN, "Error response Original from " << senderEndpoint <<
+                " msg=" << msgTxt << " inMsg=" << inMsg.getStringVal());
+    }
 
     LoaderMsg outMsg(LoaderMsg::MSG_RECEIVED, inMsg.msgId->element, getOurHostName(), getOurPort());
 
@@ -133,7 +135,8 @@ BufferUdp::Ptr MasterServer::workerAddRequest(LoaderMsg const& inMsg, BufferUdp:
     //MsgElement::Ptr p = MsgElement::retrieve(*data); &&&
     StringElement::Ptr addReqData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
     if (addReqData == nullptr) {
-        return replyMsgReceivedErr(senderEndpoint, inMsg, "workerAddRequest protobuf string retrieve failed");
+        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR,
+                                   "workerAddRequest protobuf string retrieve failed");
     }
 
 
@@ -141,30 +144,43 @@ BufferUdp::Ptr MasterServer::workerAddRequest(LoaderMsg const& inMsg, BufferUdp:
             " addReqData=(" << addReqData->element << ")");
     bool success = proto::ProtoImporter<proto::LdrMastWorkerAddReq>::setMsgFrom(addReq, addReqData->element.data(), addReqData->element.length());
     if (not success) {
-        return replyMsgReceivedErr(senderEndpoint, inMsg, "parse error in workerAddRequest");
+        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, "parse error in workerAddRequest");
     }
 
     // TODO: This should be on separate thread
     _workerList->addWorker(addReq.workerip(), addReq.workerport());
 
     LOGS(_log, LOG_LVL_INFO, "Adding worker ip=" << addReq.workerip() << " port=" << addReq.workerport());
-    // create the response proto buffer
-    proto::LdrMsgReceived protoBuf;
-    protoBuf.set_originalid(inMsg.msgId->element);
-    protoBuf.set_originalkind(inMsg.msgKind->element);
-    protoBuf.set_status(LoaderMsg::STATUS_SUCCESS); // this just means message was read, not that it was actually added.
-    protoBuf.set_dataentries(0);
+
+    return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_SUCCESS, "AddReq");
+}
 
 
-    LoaderMsg outMsg(LoaderMsg::MSG_RECEIVED, inMsg.msgId->element, getOurHostName(), getOurPort());
+BufferUdp::Ptr MasterServer::workerListRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data, udp::endpoint const& senderEndpoint) {
+    proto::LdrMastWorkerAddReq addReq;
 
-    StringElement respBuf;
-    protoBuf.SerializeToString(&(respBuf.element));
+    //MsgElement::Ptr p = MsgElement::retrieve(*data); &&&
+    StringElement::Ptr reqData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+    if (reqData == nullptr) {
+        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR,
+                                   "workerListRequest protobuf string retrieve failed");
+    }
 
-    auto sendData = std::make_shared<BufferUdp>(1000); // this message should be fairly small.
-    outMsg.serializeToData(*sendData);
-    respBuf.appendToData(*sendData);
-    return sendData;
+
+    LOGS(_log, LOG_LVL_INFO, "MasterServer::workerListRequest from " << senderEndpoint << " len=" << reqData->element.length() <<
+            " reqData=(" << reqData->element << ")");
+    bool success = proto::ProtoImporter<proto::LdrMastWorkerAddReq>::setMsgFrom(addReq, reqData->element.data(), reqData->element.length());
+    if (not success) {
+        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR,
+                                   "parse error in workerAddRequest");
+    }
+    LOGS(_log, LOG_LVL_INFO, "***&&& workerListRequest calling sendListTo " << senderEndpoint);
+    // TODO: put this in a separate thread.
+    _workerList->sendListTo(inMsg.msgId->element, addReq.workerip(), addReq.workerport(),
+                            getOurHostName(), getOurPort());
+    LOGS(_log, LOG_LVL_INFO, "***&&& workerListRequest done sendListTo ");
+
+    return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_SUCCESS, "ListReq");
 }
 
 
