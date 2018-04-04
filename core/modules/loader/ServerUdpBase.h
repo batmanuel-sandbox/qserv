@@ -38,11 +38,11 @@ namespace qserv {
 namespace loader {
 
 
-using boost::asio::ip::udp;
-
 class ServerUdpBase {
 public:
-    ServerUdpBase(boost::asio::io_service& io_service, std::string const& host, short port);
+    using Ptr = std::shared_ptr<ServerUdpBase>;
+
+    ServerUdpBase(boost::asio::io_service& io_service, std::string const& host, int port);
 
     ServerUdpBase() = delete;
     ServerUdpBase(ServerUdpBase const&) = delete;
@@ -50,11 +50,19 @@ public:
 
     virtual ~ServerUdpBase() = default;
 
-    virtual BufferUdp::Ptr parseMsg(BufferUdp::Ptr const& data, udp::endpoint const& endpoint);
+    virtual BufferUdp::Ptr parseMsg(BufferUdp::Ptr const& data,
+                                    boost::asio::ip::udp::endpoint const& endpoint);
 
     uint64_t getNextMsgId() { return _msgIdSeq++; }
-    std::string getOurHostName() { return _hostName; }
-    short getOurPort() { return _port; }
+    std::string getOurHostName() const { return _hostName; }
+    int getOurPort() const { return _port; }
+    uint32_t getErrCount() const { return _errCount; }
+
+    void sendBufferTo(std::string const& host, int port, BufferUdp& sendBuf);
+    boost::asio::ip::udp::endpoint resolve(std::string const& hostName, int port);
+
+protected:
+    std::atomic<uint32_t> _errCount{0};
 
 private:
     void _receivePrepare(); ///< Give the io_service our callback for receiving.
@@ -64,13 +72,13 @@ private:
 
     static std::atomic<uint64_t> _msgIdSeq; ///< Counter for unique message ids from this server.
     boost::asio::io_service& _ioService;
-    udp::socket _socket;
-    udp::endpoint _senderEndpoint;
+    boost::asio::ip::udp::socket _socket;
+    boost::asio::ip::udp::endpoint _senderEndpoint;
     // char _data[MAX_MSG_SIZE];
     BufferUdp::Ptr _data; ///< data buffer for recieving
     BufferUdp::Ptr _sendData; ///< data buffer for sending.
     std::string _hostName;
-    short _port;
+    int _port;
 };
 
 

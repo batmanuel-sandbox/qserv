@@ -306,6 +306,8 @@ public:
     UInt64Element::Ptr msgId;
     StringElement::Ptr senderHost;
     UInt32Element::Ptr senderPort;
+
+    friend std::ostream& operator<<(std::ostream& os, LoaderMsg const& loaderMsg);
 };
 
 }}} // namespace lsst::qserv::loader

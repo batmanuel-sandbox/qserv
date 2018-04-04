@@ -55,7 +55,7 @@ message WorkerRangeInt {
 
 message WorkerListItem {
     required uint32 name    = 1; // worker's id number
-    optional LdrMastWorkerAddReq address = 2;  // &&& make required 
+    optional LdrMastWorkerAddReq address = 2;
     optional WorkerRangeString rangeStr = 3;
     optional WorkerRangeInt rangeInt = 4;
 }

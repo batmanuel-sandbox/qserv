@@ -38,22 +38,31 @@ namespace lsst {
 namespace qserv {
 namespace loader {
 
+class CentralWorker;
+
 class WorkerServer : public ServerUdpBase {
 public:
-    WorkerServer(boost::asio::io_service& io_service, std::string const& host, short port, WorkerList::Ptr const& workersList)
-        : ServerUdpBase(io_service, host, port), _workersList(workersList) {}
+    WorkerServer(boost::asio::io_service& ioService, std::string const& host, int port, CentralWorker* centralWorker)
+        : ServerUdpBase(ioService, host, port), _centralWorker(centralWorker) {}
 
     WorkerServer() = delete;
 
     ~WorkerServer() override = default;
 
-    BufferUdp::Ptr parseMsg(BufferUdp::Ptr const& data, udp::endpoint const& endpoint) override;
+    BufferUdp::Ptr parseMsg(BufferUdp::Ptr const& data,
+                            boost::asio::ip::udp::endpoint const& endpoint) override;
 
-    BufferUdp::Ptr replyMsgReceived(udp::endpoint const& senderEndpoint, LoaderMsg const& inMsg,
+    BufferUdp::Ptr replyMsgReceived(boost::asio::ip::udp::endpoint const& senderEndpoint,
+                                    LoaderMsg const& inMsg,
                                     int status, std::string const& msgTxt); // TODO shows up in both MasterServer and WorkerServer
 
 private:
-    WorkerList::Ptr _workersList;
+    void _msgRecieved(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
+                      boost::asio::ip::udp::endpoint const& senderEndpoint);
+
+
+    // WorkerList::Ptr _workersList; &&&
+    CentralWorker* _centralWorker;
 };
 
 

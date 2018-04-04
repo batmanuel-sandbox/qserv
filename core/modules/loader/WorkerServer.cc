@@ -31,8 +31,10 @@
 // Third-party headers
 
 // Qserv headers
+#include "loader/Central.h"
 #include "loader/LoaderMsg.h"
 #include "proto/loader.pb.h"
+#include "proto/ProtoImporter.h"
 
 // LSST headers
 #include "lsst/log/Log.h"
@@ -45,15 +47,8 @@ namespace lsst {
 namespace qserv {
 namespace loader {
 
-BufferUdp::Ptr WorkerServer::parseMsg(BufferUdp::Ptr const& data, udp::endpoint const& senderEndpoint) {
-#if 0 // &&& old test code for echo may still be useful.
-    // echo server, so send back what we got
-    BufferUdp::Ptr sendData = data;
-    std::string str(sendData->begin(), sendData->getCurrentLength());
-    std::cout << "str len=" << str.length() << std::endl;
-    LOGS(_log, LOG_LVL_INFO, "Worker bytes(" << sendData->getCurrentLength() << "):(" << str <<
-            ") from endpoint " << senderEndpoint);
-#else
+BufferUdp::Ptr WorkerServer::parseMsg(BufferUdp::Ptr const& data,
+                                      boost::asio::ip::udp::endpoint const& senderEndpoint) {
     LOGS(_log, LOG_LVL_INFO, "&&& WorkerServer::parseMsg sender " << senderEndpoint << " data length=" << data->getCurrentWriteLength());
     BufferUdp::Ptr sendData; /// nullptr for empty response.
     LoaderMsg inMsg;
@@ -66,33 +61,37 @@ BufferUdp::Ptr WorkerServer::parseMsg(BufferUdp::Ptr const& data, udp::endpoint 
         // TODO handle a message with information about the master
         break;
     case LoaderMsg::MAST_WORKER_LIST:
-        _workersList->workerListReceive(data);
+        _centralWorker->getWorkerList()->workerListReceive(data);
+        break;
+    case LoaderMsg::MSG_RECEIVED:
+        LOGS(_log, LOG_LVL_WARN, "&&&********* WorkerServer::parseMsg MSG_RECEIVED");
+        _msgRecieved(inMsg, data, senderEndpoint);
+        sendData.reset(); // never send a response back for one of these, infinite loop.
         break;
     case LoaderMsg::MAST_WORKER_INFO:
     case LoaderMsg::WORKER_INSERT_KEY_REQ:
     case LoaderMsg::KEY_INFO_REQ:
     case LoaderMsg::KEY_INFO:
+        LOGS(_log, LOG_LVL_ERROR, "&&& need to add handler for " << inMsg.msgKind->element);
+        break;
 
-
-        // following not expected by worker
-    case LoaderMsg::MSG_RECEIVED:
+    // following not expected by worker
     case LoaderMsg::MAST_INFO_REQ:
     case LoaderMsg::MAST_WORKER_LIST_REQ:
     case LoaderMsg::MAST_WORKER_INFO_REQ:
     case LoaderMsg::MAST_WORKER_ADD_REQ:
         // TODO add response for known but unexpected message.
+        sendData = replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, "unexpected Msg Kind");
     default:
         sendData = replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, "unknownMsgKind");
     }
-
-
-#endif
 
     return sendData;
 }
 
 
-BufferUdp::Ptr WorkerServer::replyMsgReceived(udp::endpoint const& senderEndpoint, LoaderMsg const& inMsg,
+BufferUdp::Ptr WorkerServer::replyMsgReceived(boost::asio::ip::udp::endpoint const& senderEndpoint,
+                                              LoaderMsg const& inMsg,
                                               int status, std::string const& msgTxt) {
 
     if (status != LoaderMsg::STATUS_SUCCESS) {
@@ -120,6 +119,40 @@ BufferUdp::Ptr WorkerServer::replyMsgReceived(udp::endpoint const& senderEndpoin
 }
 
 
+void WorkerServer::_msgRecieved(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
+                                boost::asio::ip::udp::endpoint const& senderEndpoint) {
+    // This is only really expected for parsing errors. Most responses to
+    // requests come in as normal messages.
+    StringElement::Ptr seData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+
+    proto::LdrMsgReceived protoBuf;
+    bool success = proto::ProtoImporter<proto::LdrMsgReceived>::setMsgFrom(
+            protoBuf, seData->element.data(), seData->element.length());
+
+    std::stringstream os;
+    int status = LoaderMsg::STATUS_PARSE_ERR;
+
+    if (success) {
+        auto originalId   = protoBuf.originalid();
+        auto originalKind = protoBuf.originalkind();
+        status            = protoBuf.status();
+        auto errMsg       = protoBuf.errmsg();
+        os << " sender=" << senderEndpoint <<
+                " id=" << originalId << " kind=" << originalKind << " status=" << status <<
+                " msg=" << errMsg;
+    } else {
+        os << " Failed to parse MsgRecieved! sender=" << senderEndpoint;
+    }
+
+    if (status != LoaderMsg::STATUS_SUCCESS) {
+        ++_errCount;
+        LOGS(_log, LOG_LVL_WARN, "MsgRecieved Message sent by this server caused error at its target" <<
+              " errCount=" << _errCount << os.str());
+    } else {
+        // There shouldn't be many of these, unless there's a need to time things.
+        LOGS(_log, LOG_LVL_INFO, "MsgRecieved " << os.str());
+    }
+}
 
 }}} // namespace lsst:qserv::loader
 

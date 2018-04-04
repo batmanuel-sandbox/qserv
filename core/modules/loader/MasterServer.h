@@ -39,28 +39,34 @@ namespace qserv {
 namespace loader {
 
 class LoaderMsg;
+class CentralMaster;
 
 class MasterServer : public ServerUdpBase {
 public:
-    MasterServer(boost::asio::io_service& io_service, std::string const& host, short port, WorkerList::Ptr const& workerList)
-        : ServerUdpBase(io_service, host, port), _workerList(workerList) {}
+    MasterServer(boost::asio::io_service& io_service, std::string const& host, int port, CentralMaster* centralMaster)
+        : ServerUdpBase(io_service, host, port), _centralMaster(centralMaster) {}
 
     ~MasterServer() override = default;
 
-    BufferUdp::Ptr parseMsg(BufferUdp::Ptr const& data, udp::endpoint const& endpoint) override;
+    BufferUdp::Ptr parseMsg(BufferUdp::Ptr const& data,
+                            boost::asio::ip::udp::endpoint const& endpoint) override;
 
 
-    BufferUdp::Ptr workerAddRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data, udp::endpoint const& senderEndpoint);
-    BufferUdp::Ptr workerListRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data, udp::endpoint const& senderEndpoint);
+    BufferUdp::Ptr workerAddRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
+                                    boost::asio::ip::udp::endpoint const& senderEndpoint);
+
+    BufferUdp::Ptr workerListRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
+                                     boost::asio::ip::udp::endpoint const& senderEndpoint);
 
     // &&& I'm thinking replies should only be sent on errors and always be sent to the server port. A reply
     // that gets lost in transmission is going to be a nuisance, requiring extra timeouts.
-    BufferUdp::Ptr replyMsgReceived(udp::endpoint const& senderEndpoint, LoaderMsg const& inMsg,
-                                       int status, std::string const& msgTxt); // TODO shows up in both MasterServer and WorkerServer
-
+    BufferUdp::Ptr replyMsgReceived(boost::asio::ip::udp::endpoint const& senderEndpoint,
+                                    LoaderMsg const& inMsg,
+                                    int status, std::string const& msgTxt); // TODO shows up in both MasterServer and WorkerServer
 
 private:
-    WorkerList::Ptr _workerList;
+    // WorkerList::Ptr _workerList; &&&
+    CentralMaster* _centralMaster;
 };
 
 

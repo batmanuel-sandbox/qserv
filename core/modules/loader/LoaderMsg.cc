@@ -170,4 +170,10 @@ std::string LoaderMsg::getStringVal() const {
     return str;
 }
 
+std::ostream& operator<<(std::ostream& os, LoaderMsg const& loaderMsg) {
+    os << loaderMsg.getStringVal();
+    return os;
+}
+
+
 }}} // namespace lsst::qserv::loader

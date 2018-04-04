@@ -26,6 +26,7 @@
 #include <boost/asio.hpp>
 
 // Qserv headers
+#include "loader/Central.h"
 #include "loader/LoaderMsg.h"
 #include "loader/MasterServer.h"
 #include "loader/WorkerServer.h"
@@ -39,7 +40,7 @@ LOG_LOGGER _log = LOG_GET("lsst.qserv.loader.test");
 }
 
 using namespace lsst::qserv::loader;
-
+using  boost::asio::ip::udp;
 
 int main(int argc, char* argv[]) {
     UInt16Element num16(1 | 2 << 8);
@@ -177,9 +178,9 @@ int main(int argc, char* argv[]) {
     /// &&& TODO test timeouts. Start a worker server and try to contact master.
     ///    After a few failures, start master
 
-    WorkerList::Ptr masterWorkerList = std::make_shared<WorkerList>();
-    WorkerList::Ptr w1WorkerList = std::make_shared<WorkerList>();
-    WorkerList::Ptr w2WorkerList = std::make_shared<WorkerList>();
+    //WorkerList::Ptr masterWorkerList = std::make_shared<WorkerList>();  &&&
+    //WorkerList::Ptr w1WorkerList = std::make_shared<WorkerList>(); &&&
+    //WorkerList::Ptr w2WorkerList = std::make_shared<WorkerList>(); &&&
 
     /// Start a master server
     std::string masterIP = "127.0.0.1";
@@ -194,20 +195,27 @@ int main(int argc, char* argv[]) {
     int worker2Port = 10044;
     boost::asio::io_service ioServiceWorker2;
 
-    MasterServer mastServ(ioServiceMaster, masterIP, masterPort, masterWorkerList);
-    std::thread mastT([&ioServiceMaster]() { ioServiceMaster.run(); });
+    //MasterServer mastServ(ioServiceMaster, masterIP, masterPort, masterWorkerList); &&&
+    // std::thread mastT([&ioServiceMaster]() { ioServiceMaster.run(); }); &&&
 
+    CentralMaster cMaster(ioServiceMaster, masterIP, masterPort);
+    cMaster.run();
 
     /// Start worker server 1
-    WorkerServer worker1Serv(ioServiceWorker1, worker1IP, worker1Port, w1WorkerList);
-    std::thread worker1T([&ioServiceWorker1]() { ioServiceWorker1.run(); });
+    //WorkerServer worker1Serv(ioServiceWorker1, worker1IP, worker1Port, w1WorkerList); &&&
+    //std::thread worker1T([&ioServiceWorker1]() { ioServiceWorker1.run(); }); &&&
+    // &&& boost::asio::io_service& ioService, std::string const& masterHostName, int masterPort, std::string const& hostName, int port
+    CentralWorker wCentral1(ioServiceWorker1, masterIP, masterPort, worker1IP, worker1Port);
+    wCentral1.run();
 
 
     /// Start worker server 2
-    WorkerServer worker2Serv(ioServiceWorker2, worker2IP, worker2Port, w2WorkerList);
-    std::thread worker2T([&ioServiceWorker2]() { ioServiceWorker2.run(); });
+    //WorkerServer worker2Serv(ioServiceWorker2, worker2IP, worker2Port, w2WorkerList); &&&
+    //std::thread worker2T([&ioServiceWorker2]() { ioServiceWorker2.run(); }); &&&
+    CentralWorker wCentral2(ioServiceWorker2, masterIP, masterPort, worker2IP, worker2Port);
+    wCentral2.run();
 
-    std::cout << "***************************************************** &&&" << std::endl;
+    /* &&&
     // create a client socket and register the workers.
     boost::asio::io_context io_context;
     udp::resolver resolver(io_context);
@@ -217,25 +225,27 @@ int main(int argc, char* argv[]) {
     socket.open(udp::v4());
 
     uint64_t msgId = 1;
+    */
 
     /// Unknown message kind test. Pretending to be worker1.
     {
-        uint16_t kind = 6020;
-        LoaderMsg msg(kind, msgId, worker1IP, masterPort);
-        BufferUdp msgData(128);
-        msg.serializeToData(msgData);
-        // &&& change this to be sent from the worker1Serv port.
-        socket.send_to(boost::asio::buffer(msgData.begin(), msgData.getCurrentWriteLength()), masterEndpoint);
+        auto originalErrCount = wCentral1.getErrCount();
+        std::cout << "******1******** testSendBadMessage start" << std::endl;
+        wCentral1.testSendBadMessage();
+        sleep(2); // &&& want handshaking
 
-        BufferUdp respBuf;
-        udp::endpoint senderEndpoint;
-        size_t len = socket.receive_from(boost::asio::buffer(respBuf.getBuffer(), respBuf.getMaxLength()), senderEndpoint);
-        respBuf.setWriteCursor(len);
-        std::cout << "******1 respBuf =" << respBuf.dump(true, true) << std::endl;
+        if (originalErrCount == wCentral1.getErrCount()) {
+            LOGS(_log, LOG_LVL_ERROR, "testSendBadMessage errCount did not change " << originalErrCount);
+            exit(-1);
+        }
     }
 
     /// Real message, register worker1 with the master
     {
+        std::cout << "******2******* register worker 1 start" << std::endl;
+        wCentral1.registerWithMaster();
+
+        /* &&&
         LoaderMsg msg(LoaderMsg::MAST_WORKER_ADD_REQ, ++msgId, "127.0.0.1", masterPort);
         BufferUdp msgData;
         msg.serializeToData(msgData);
@@ -257,10 +267,17 @@ int main(int argc, char* argv[]) {
         size_t len = socket.receive_from(boost::asio::buffer(respBuf.getBuffer(), respBuf.getMaxLength()), senderEndpoint);
         respBuf.setWriteCursor(len);
         std::cout << "******2 respBuf =" << respBuf.dump(true, true) << std::endl;
+         */
+
+
+
     }
 
     /// register worker2 with the master
     {
+        std::cout << "******3******* register worker 2 start" << std::endl;
+        wCentral2.registerWithMaster();
+        /* &&&
         LoaderMsg msg(LoaderMsg::MAST_WORKER_ADD_REQ, ++msgId, "127.0.0.1", masterPort);
         BufferUdp msgData;
         msg.serializeToData(msgData);
@@ -281,10 +298,15 @@ int main(int argc, char* argv[]) {
         size_t len = socket.receive_from(boost::asio::buffer(respBuf.getBuffer(), respBuf.getMaxLength()), senderEndpoint);
         respBuf.setWriteCursor(len);
         std::cout << "******3 respBuf =" << respBuf.dump(true, true) << std::endl;
+        */
+        std::cout << "&&&******1************************************** end" << std::endl;
     }
 
     /// Have worker 1 request a the list of workers from the master.
     {
+        /* &&&
+        wCentral1.monitorWorkers();
+
         LoaderMsg msg(LoaderMsg::MAST_WORKER_LIST_REQ, ++msgId, "127.0.0.1", masterPort);
         BufferUdp msgData;
         msg.serializeToData(msgData);
@@ -305,6 +327,7 @@ int main(int argc, char* argv[]) {
         size_t len = socket.receive_from(boost::asio::buffer(respBuf.getBuffer(), respBuf.getMaxLength()), senderEndpoint);
         respBuf.setWriteCursor(len);
         std::cout << "******4 respBuf =" << respBuf.dump(true, true) << std::endl;
+        */
     }
 
 
@@ -313,7 +336,7 @@ int main(int argc, char* argv[]) {
     std::cout << "sleeping" << std::endl;
     sleep(15);
     //ioService.stop(); // &&& this doesn't seem to work cleanly
-    mastT.join();
+    // mastT.join(); &&&
 
 
     std::cout << "DONE" << std::endl;

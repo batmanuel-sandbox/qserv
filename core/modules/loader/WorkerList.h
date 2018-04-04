@@ -32,6 +32,7 @@
 
 // Qserv headers
 #include "loader/BufferUdp.h"
+#include "loader/DoList.h"
 #include "loader/WorkerList.h"
 
 
@@ -39,6 +40,9 @@ namespace lsst {
 namespace qserv {
 namespace loader {
 
+class Central;
+class CentralWorker;
+class CentralMaster;
 class LoaderMsg;
 
 /// Comparable network addresses.
@@ -69,13 +73,14 @@ struct NetworkAddress {
 };
 
 
-class WorkerListItem {
+/// Standard information for a single worker, IP address, key range, timeouts.
+class WorkerListItem : public DoListItem {
 public:
     using Ptr = std::shared_ptr<WorkerListItem>;
 
-    WorkerListItem(uint32_t name) : _name(name) {}
-    WorkerListItem(uint32_t name, NetworkAddress const& address)
-        : _name(name), _address(address) {}
+    WorkerListItem(uint32_t name, Central* central) : _name(name), _central(central) {}
+    WorkerListItem(uint32_t name, NetworkAddress const& address, Central* central)
+        : _name(name), _address(address), _central(central) {}
 
     WorkerListItem() = delete;
     WorkerListItem(WorkerListItem const&) = delete;
@@ -86,6 +91,10 @@ public:
     NetworkAddress getAddress() const { return _address; }
     uint32_t getName() const { return _name; }
 
+    util::CommandTracked::Ptr createCommand() override;
+    util::CommandTracked::Ptr createCommandWorker(CentralWorker* centralW);
+    util::CommandTracked::Ptr createCommandMaster(CentralMaster* centralM);
+
     friend std::ostream& operator<<(std::ostream& os, WorkerListItem const& item);
 private:
     uint32_t _name;
@@ -93,30 +102,42 @@ private:
     // _lastContact; &&&
     // _lastUpdate; &&&
     // _range; &&&
+
+    Central* _central;
 };
 
-class WorkerList {
+class WorkerList : public DoListItem {
 public:
     using Ptr = std::shared_ptr<WorkerList>;
 
-    WorkerList() = default;
+    WorkerList(Central* central) : _central(central) {}
+    WorkerList() = delete;
     WorkerList(WorkerList const&) = delete;
     WorkerList& operator=(WorkerList const&) = delete;
 
     virtual ~WorkerList() = default;
 
-    // Returns true when new worker added
-    bool addWorker(std::string const& ip, short port);
+    ///// Master only //////////////////////
+    // Returns pointer to new item if an item was created.
+    WorkerListItem::Ptr addWorker(std::string const& ip, short port);
 
-    // Returns true of message could be parsed and send will be attempted.
+    // Returns true of message could be parsed and a send will be attempted.
     bool sendListTo(uint64_t msgId, std::string const& ip, short port,
                     std::string const& outHostName, short ourPort);
 
+
+    //// Worker only ////////////////////////
+    // Receive a list of workers from the master.
     bool workerListReceive(BufferUdp::Ptr const& data);
+
+    util::CommandTracked::Ptr createCommand() override;
+    util::CommandTracked::Ptr createCommandWorker(CentralWorker* centralW);
+    util::CommandTracked::Ptr createCommandMaster(CentralMaster* centralM);
 
 protected:
     void _flagListChange();
 
+    Central* _central;
     std::map<uint32_t, WorkerListItem::Ptr> _nameMap;
     std::map<NetworkAddress, WorkerListItem::Ptr> _ipMap;
     bool _wListChanged{false}; ///< true if the list has changed

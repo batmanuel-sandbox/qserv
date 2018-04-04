@@ -33,6 +33,7 @@
 
 
 // qserv headers
+#include "loader/Central.h"
 #include "loader/LoaderMsg.h"
 #include "proto/ProtoImporter.h"
 #include "proto/loader.pb.h"
@@ -49,29 +50,162 @@ namespace lsst {
 namespace qserv {
 namespace loader {
 
-// Returns true when new worker added
-bool WorkerList::addWorker(std::string const& ip, short port) {
-    NetworkAddress address(ip, port);
-    {
-        // If it is already in the map, do not change its name.
-        std::lock_guard<std::mutex> lock(_mapMtx);
-        auto iter = _ipMap.find(address);
-        if (iter != _ipMap.end()) {
-            LOGS(_log, LOG_LVL_WARN, "addWorker, Could not add worker as worker already exists. " <<
-                    ip << ":" << port);
-            return false;
-        }
-        // Get an id and make new worker item
-        auto workerListItem = std::make_shared<WorkerListItem>(_sequence++, address);
-        _ipMap.insert(std::make_pair(address, workerListItem));
-        _nameMap.insert(std::make_pair(workerListItem->getName(), workerListItem));
-        LOGS(_log, LOG_LVL_INFO, "Added worker " << *workerListItem);
-        _flagListChange();
+util::CommandTracked::Ptr WorkerListItem::createCommand() {
+
+    CentralWorker* centralWorker = dynamic_cast<CentralWorker*>(_central);
+    if (centralWorker != nullptr) {
+        return createCommandWorker(centralWorker);
     }
 
-    // TODO: adding a worker changes state and messages to workers should be sent
-    return true;
+    CentralMaster* centralMaster = dynamic_cast<CentralMaster*>(_central);
+    if (centralMaster != nullptr) {
+        return createCommandMaster(centralMaster);
+    }
+    return nullptr;
 }
+
+util::CommandTracked::Ptr WorkerListItem::createCommandWorker(CentralWorker* centralW) {
+     // Create a command to put on the pool to
+     //  - create an io_contex
+     //  - ask the master about a server with _name
+
+    class WorkerReqCmd : public util::CommandTracked {
+    public:
+        WorkerReqCmd(CentralWorker* centralW, uint32_t name) : _centralW(centralW), _name(name) {}
+
+        void action(util::CmdData *data) override {
+            /// Request all information the master has for one worker.
+            LOGS(_log, LOG_LVL_INFO, "&&& WorkerListItem::createCommand::WorkerReqCmd::action");
+
+            // TODO make a function for this, it's always going to be the same.
+            proto::LdrMastWorkerAddReq protoOurAddress;
+            protoOurAddress.set_workerip(_centralW->getHostName());
+            protoOurAddress.set_workerport(_centralW->getPort());
+            StringElement eOurAddress(protoOurAddress.SerializeAsString());
+
+            proto::WorkerListItem protoItem;
+            protoItem.set_name(_name);
+            StringElement eItem(protoItem.SerializeAsString());
+
+            LoaderMsg workerInfoReqMsg(LoaderMsg::MAST_WORKER_INFO_REQ, _centralW->getNextMsgId(),
+                                       _centralW->getHostName(), _centralW->getPort());
+            BufferUdp sendBuf(1000);
+            workerInfoReqMsg.serializeToData(sendBuf);
+            eOurAddress.appendToData(sendBuf);
+            eItem.appendToData(sendBuf);
+
+            // Send the request to master.
+            auto masterHost = _centralW->getMasterHostName();
+            auto masterPort = _centralW->getMasterPort();
+            _centralW->sendBufferTo(masterHost, masterPort, sendBuf);
+        }
+
+    private:
+        CentralWorker* _centralW;
+        uint32_t _name;
+    };
+
+    LOGS(_log, LOG_LVL_INFO, "&&& WorkerListItem::createCommandWorker " << _name);
+    return std::make_shared<WorkerReqCmd>(centralW, _name);
+}
+
+
+util::CommandTracked::Ptr WorkerListItem::createCommandMaster(CentralMaster* centralMaster) {
+    LOGS(_log, LOG_LVL_ERROR, "&&& WorkerListItem::createCommandMaster This function needs to do something!!!!!!!!!");
+    // &&& ask worker for current range, neighbors.
+    return nullptr;
+}
+
+
+util::CommandTracked::Ptr WorkerList::createCommand() {
+    CentralWorker* centralWorker = dynamic_cast<CentralWorker*>(_central);
+      if (centralWorker != nullptr) {
+          return createCommandWorker(centralWorker);
+      }
+
+      CentralMaster* centralMaster = dynamic_cast<CentralMaster*>(_central);
+      if (centralMaster != nullptr) {
+          return createCommandMaster(centralMaster);
+      }
+      return nullptr;
+}
+
+
+util::CommandTracked::Ptr WorkerList::createCommandWorker(CentralWorker* centralW) {
+    // On the worker, need to occasionally ask for a list of workers from the master
+    // and make sure each of those workers is on the doList
+    class MastWorkerListReqCmd : public util::CommandTracked {
+    public:
+        MastWorkerListReqCmd(CentralWorker* centralW, std::map<uint32_t, WorkerListItem::Ptr> nameMap)
+            : _centralW(centralW), _nameMap(nameMap) {}
+
+        void action(util::CmdData *data) override {
+            /// Request a list of all workers.
+            LOGS(_log, LOG_LVL_INFO, "&&& WorkerListItem::createCommand::WorkerReqCmd::action");
+
+            // TODO make a function for this, it's always going to be the same.
+            proto::LdrMastWorkerAddReq protoOurAddress;
+            protoOurAddress.set_workerip(_centralW->getHostName());
+            protoOurAddress.set_workerport(_centralW->getPort());
+            StringElement eOurAddress(protoOurAddress.SerializeAsString());
+
+            LoaderMsg workerInfoReqMsg(LoaderMsg::MAST_WORKER_LIST_REQ, _centralW->getNextMsgId(),
+                                       _centralW->getHostName(), _centralW->getPort());
+            BufferUdp sendBuf(1000);
+            workerInfoReqMsg.serializeToData(sendBuf);
+            eOurAddress.appendToData(sendBuf);
+
+            // Send the request to master.
+            auto masterHost = _centralW->getMasterHostName();
+            auto masterPort = _centralW->getMasterPort();
+            _centralW->sendBufferTo(masterHost, masterPort, sendBuf);
+
+            /// Go through the existing list and add any that have not been add to the doList
+            for (auto const& item : _nameMap) {
+                _centralW->addDoListItem(item.second);
+            }
+        }
+
+    private:
+        CentralWorker* _centralW;
+        std::map<uint32_t, WorkerListItem::Ptr> _nameMap;
+    };
+
+    LOGS(_log, LOG_LVL_INFO, "&&& WorkerList::createCommandWorker");
+    return std::make_shared<MastWorkerListReqCmd>(centralW, _nameMap);
+}
+
+
+util::CommandTracked::Ptr WorkerList::createCommandMaster(CentralMaster* centralM) {
+    // &&& The master probably doesn't need to make any checks on the list, it just
+    // &&& wants to make sure all of its items are on the doList.
+    return nullptr;
+}
+
+
+// Returns true when new worker added
+WorkerListItem::Ptr WorkerList::addWorker(std::string const& ip, short port) {
+    NetworkAddress address(ip, port);
+
+    // If it is already in the map, do not change its name.
+    std::lock_guard<std::mutex> lock(_mapMtx);
+    auto iter = _ipMap.find(address);
+    if (iter != _ipMap.end()) {
+        LOGS(_log, LOG_LVL_WARN, "addWorker, Could not add worker as worker already exists. " <<
+                ip << ":" << port);
+        return nullptr;
+    }
+    // Get an id and make new worker item
+    auto workerListItem = std::make_shared<WorkerListItem>(_sequence++, address, _central);
+    _ipMap.insert(std::make_pair(address, workerListItem));
+    _nameMap.insert(std::make_pair(workerListItem->getName(), workerListItem));
+    LOGS(_log, LOG_LVL_INFO, "Added worker " << *workerListItem);
+    _flagListChange();
+
+
+    return workerListItem;
+}
+
 
 
 bool WorkerList::sendListTo(uint64_t msgId, std::string const& ip, short port,
@@ -139,7 +273,7 @@ bool WorkerList::workerListReceive(BufferUdp::Ptr const& data) {
             uint32_t name = protoItem.name();
             auto iter = _nameMap[name];
             if (iter == nullptr) {
-                iter = std::make_shared<WorkerListItem>(name);
+                iter = std::make_shared<WorkerListItem>(name, _central);
                 strNames += std::to_string(name) + ",";
             }
         }

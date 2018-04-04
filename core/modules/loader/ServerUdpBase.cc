@@ -45,25 +45,21 @@ namespace loader {
 std::atomic<uint64_t> ServerUdpBase::_msgIdSeq{1};
 
 
-ServerUdpBase::ServerUdpBase(boost::asio::io_service& io_service, std::string const& host, short port)
-    : _ioService(io_service), _socket(io_service, udp::endpoint(udp::v4(), port)),
+ServerUdpBase::ServerUdpBase(boost::asio::io_service& io_service, std::string const& host, int port)
+    : _ioService(io_service),
+      _socket(io_service, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), port)),
       _hostName(host), _port(port) {
-    /* &&&
-    char hName[HOST_NAME_MAX];
-    gethostname(hName, HOST_NAME_MAX);
-    _hostName = hName;
-    */
-    _receivePrepare();
+    _receivePrepare(); // Prime the server for an incoming message.
 }
 
 
 void ServerUdpBase::_receiveCallback(boost::system::error_code const& error, size_t bytesRecvd) {
     _data->setWriteCursor(bytesRecvd); // _data needs to know the valid portion of the buffer.
     if (!error && bytesRecvd > 0) {
-        std::string str(_data->begin(), bytesRecvd);
-        std::cout << "str len=" << str.length() << std::endl;
-        LOGS(_log, LOG_LVL_INFO, "rCb received(" << bytesRecvd << "):" << str <<
-                                 ", error code: " << error << ", from endpoint " << _senderEndpoint);
+        // std::string str(_data->begin(), bytesRecvd); &&&
+        // std::cout << "str len=" << str.length() << std::endl; // &&&
+        LOGS(_log, LOG_LVL_INFO, "rCb received(" << bytesRecvd << "):" <<
+                                 ", code=" << error << ", from endpoint=" << _senderEndpoint);
 
         _sendData = parseMsg(_data, _senderEndpoint);
         if (_sendData != nullptr) {
@@ -72,9 +68,8 @@ void ServerUdpBase::_receiveCallback(boost::system::error_code const& error, siz
             _receivePrepare();
         }
     } else {
-        /// &&& TODO - echoing is not good error response behavior.
-        _sendData = _data;
-        _sendResponse();
+        LOGS(_log, LOG_LVL_ERROR, "ServerUdpBase::_receiveCallback got empty message, ignoring");
+        _receivePrepare();
     }
 
 }
@@ -89,9 +84,38 @@ void ServerUdpBase::_sendResponse() {
 }
 
 
+void ServerUdpBase::sendBufferTo(std::string const& hostName, int port, BufferUdp& sendBuf) {
+    // The socket is not thread safe. To send on "_socket", it needs to be an async send
+    // and then it needs to know when the message was sent so it can return and free the buffer.
+    using namespace boost::asio;
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool done = false;
+
+    auto callbackFunc = [&mtx, &cv, &done](const boost::system::error_code& error, std::size_t bytesTransferred) {
+        LOGS(_log, LOG_LVL_INFO, "&&& message send complete bytes=" << bytesTransferred << " code=" << error);
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            done = true;
+        }
+        cv.notify_one(); // there is only one...
+    };
+
+    LOGS(_log, LOG_LVL_INFO, "&&& sending");
+    ip::udp::endpoint dest(boost::asio::ip::address::from_string(hostName), port);
+    _socket.async_send_to(buffer(sendBuf.begin(), sendBuf.getCurrentWriteLength()), dest,
+                          callbackFunc);
+
+    std::unique_lock<std::mutex> uLock(mtx);
+    cv.wait(uLock, [&done](){return done;});
+}
+
+
 /// This function, and its derived children, should return quickly. Handing 'data' off to another thread
 /// for handling is safe.
-BufferUdp::Ptr ServerUdpBase::parseMsg(BufferUdp::Ptr const& data, udp::endpoint const& senderEndpoint) {
+BufferUdp::Ptr ServerUdpBase::parseMsg(BufferUdp::Ptr const& data,
+                                       boost::asio::ip::udp::endpoint const& senderEndpoint) {
     // echo server, so send back what we got
     BufferUdp::Ptr sendData = data;
     std::string str(sendData->begin(), sendData->getCurrentLength());
@@ -115,6 +139,22 @@ void ServerUdpBase::_receivePrepare() {
                                                boost::asio::placeholders::error,
                                                boost::asio::placeholders::bytes_transferred));
 }
+
+
+
+boost::asio::ip::udp::endpoint ServerUdpBase::resolve(std::string const& hostName, int port) {
+    /* &&&
+    /// TODO This seems like a terrible way to do this. As it is this could be static, but not done with it yet.
+    using namespace boost::asio;
+    io_context ioContext;
+    ip::udp::resolver resolver(ioContext);
+    return *resolver.resolve(udp::v4(), hostName, std::to_string(port)).begin();
+    */
+    using namespace boost::asio;
+    ip::udp::endpoint dest(ip::address::from_string(hostName), port);
+    return dest;
+}
+
 
 
 }}} // namespace lsst::qserrv::loader
