@@ -33,6 +33,8 @@
 // Qserv headers
 #include "loader/BufferUdp.h"
 #include "loader/DoList.h"
+#include "loader/NetworkAddress.h"
+#include "loader/StringRange.h"
 #include "loader/WorkerList.h"
 
 
@@ -45,42 +47,23 @@ class CentralWorker;
 class CentralMaster;
 class LoaderMsg;
 
-/// Comparable network addresses.
-struct NetworkAddress {
-    NetworkAddress(std::string const& ip_, short port_) : ip(ip_), port(port_) {}
-    NetworkAddress() = delete;
-    NetworkAddress(NetworkAddress const&) = default;
 
-    const std::string ip;
-    const short port; // Most of the workers will have the same port number.
-
-    bool operator==(NetworkAddress const& other) const {
-        return(port == other.port && ip == other.ip);
-    }
-
-    bool operator<(NetworkAddress const& other) const {
-        auto compRes = ip.compare(other.ip);
-        if (compRes < 0) { return true; }
-        if (compRes > 0) { return false; }
-        return port < other.port;
-    }
-
-    bool operator>(NetworkAddress const& other) const {
-        return (other < *this);
-    }
-
-    friend std::ostream& operator<<(std::ostream& os, NetworkAddress const& adr);
-};
 
 
 /// Standard information for a single worker, IP address, key range, timeouts.
-class WorkerListItem : public DoListItem {
+//class WorkerListItem : public DoListItem {
+class WorkerListItem : public std::enable_shared_from_this<WorkerListItem> {
 public:
     using Ptr = std::shared_ptr<WorkerListItem>;
+    using WPtr = std::weak_ptr<WorkerListItem>;
 
-    WorkerListItem(uint32_t name, Central* central) : _name(name), _central(central) {}
-    WorkerListItem(uint32_t name, NetworkAddress const& address, Central* central)
-        : _name(name), _address(address), _central(central) {}
+    static WorkerListItem::Ptr create(uint32_t name, Central *central) {
+        return WorkerListItem::Ptr(new WorkerListItem(name, central));
+    }
+    static WorkerListItem::Ptr create(uint32_t name, NetworkAddress const& address, Central *central) {
+        return WorkerListItem::Ptr(new WorkerListItem(name, address, central));
+    }
+
 
     WorkerListItem() = delete;
     WorkerListItem(WorkerListItem const&) = delete;
@@ -91,20 +74,35 @@ public:
     NetworkAddress getAddress() const { return _address; }
     uint32_t getName() const { return _name; }
 
-    util::CommandTracked::Ptr createCommand() override;
+    void addDoListItems(Central *central);
+
+    //util::CommandTracked::Ptr createCommand() override;
     util::CommandTracked::Ptr createCommandWorker(CentralWorker* centralW);
     util::CommandTracked::Ptr createCommandMaster(CentralMaster* centralM);
 
     friend std::ostream& operator<<(std::ostream& os, WorkerListItem const& item);
 private:
+    WorkerListItem(uint32_t name, Central* central) : _name(name), _central(central) {}
+    WorkerListItem(uint32_t name, NetworkAddress const& address, Central* central)
+         : _name(name), _address(address), _central(central) {}
+
     uint32_t _name;
     NetworkAddress _address{"", 0}; ///< empty string indicates address is not valid.
-    // _lastContact; &&&
-    // _lastUpdate; &&&
-    // _range; &&&
+    TimeOut _lastContact{std::chrono::minutes(10)};  ///< Last time information was received from this worker
+    StringRange _range;  ///< min and max range for this worker.
 
     Central* _central;
+
+    struct WorkerNeedsMasterData : public DoListItem {
+        WorkerNeedsMasterData(WorkerListItem::Ptr const& workerListItem_) :  workerListItem(workerListItem_) {}
+        WorkerListItem::WPtr workerListItem;
+        util::CommandTracked::Ptr createCommand() override;
+    };
+
+    DoListItem::Ptr _workerUpdateNeedsMasterData;
 };
+
+
 
 class WorkerList : public DoListItem {
 public:

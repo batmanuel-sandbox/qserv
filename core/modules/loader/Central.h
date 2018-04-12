@@ -117,16 +117,20 @@ public:
         : Central(ioService, masterHostName, masterPort),
           _hostName(hostName), _port(port) {
         _server = std::make_shared<WorkerServer>(_ioService, _hostName, _port, this);
+        _monitorWorkers();
     }
 
     std::string getHostName() const { return _hostName; }
     int getPort() const { return _port; }
 
     void registerWithMaster();
-    void monitorWorkers();
+
     void testSendBadMessage();
 
 private:
+    void _registerWithMaster();
+    void _monitorWorkers();
+
     const std::string _hostName;
     const int         _port;
 

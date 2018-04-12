@@ -32,6 +32,7 @@
 
 // Qserv headers
 #include "loader/BufferUdp.h"
+#include "proto/ProtoImporter.h"
 
 
 #define MAX_MSG_STRING_LENGTH 5000
@@ -45,6 +46,9 @@ namespace loader {
 // Expand to include basic message information &&&
 class LoaderMsgErr : public std::exception {
 public:
+    LoaderMsgErr(std::string const& msg, std::string const& file, int line) {
+        _msg = msg + " " + file + ":" + std::to_string(line);
+    }
     LoaderMsgErr(std::string const& msg) : _msg(msg) {}
     const char* what() const throw() override {
         return _msg.c_str();
@@ -249,11 +253,27 @@ public:
 
     std::string element;
 
-
     bool equal(MsgElement* other) override {
         StringElement* ptr = dynamic_cast<StringElement*>(other);
         if (ptr == nullptr) { return false; }
         return (ptr->element == ptr->element);
+    }
+
+    template<typename T>
+    std::unique_ptr<T> protoParse() {
+        std::unique_ptr<T> protoItem(new T());
+        bool success = proto::ProtoImporter<T>::setMsgFrom(*protoItem, element.data(), element.length());
+        if (not success) {
+            return nullptr;
+        }
+        return protoItem;
+    }
+
+    template<typename T>
+    static std::unique_ptr<T> protoParse(BufferUdp::Ptr const& data) {
+        StringElement::Ptr itemData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+        if (itemData == nullptr) { return nullptr; }
+        return itemData->protoParse<T>();
     }
 };
 

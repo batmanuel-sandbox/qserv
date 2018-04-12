@@ -245,60 +245,13 @@ int main(int argc, char* argv[]) {
         std::cout << "******2******* register worker 1 start" << std::endl;
         wCentral1.registerWithMaster();
 
-        /* &&&
-        LoaderMsg msg(LoaderMsg::MAST_WORKER_ADD_REQ, ++msgId, "127.0.0.1", masterPort);
-        BufferUdp msgData;
-        msg.serializeToData(msgData);
-        // create the proto buffer
-        lsst::qserv::proto::LdrMastWorkerAddReq protoBuf;
-        protoBuf.set_workerip(worker1IP);
-        protoBuf.set_workerport(worker1Port);
-
-        StringElement addWorkerBuf;
-        protoBuf.SerializeToString(&(addWorkerBuf.element));
-        addWorkerBuf.appendToData(msgData);
-
-
-        // &&& change this to be sent from the worker1Serv port.
-        socket.send_to(boost::asio::buffer(msgData.begin(), msgData.getCurrentWriteLength()), masterEndpoint);
-
-        BufferUdp respBuf;
-        udp::endpoint senderEndpoint;
-        size_t len = socket.receive_from(boost::asio::buffer(respBuf.getBuffer(), respBuf.getMaxLength()), senderEndpoint);
-        respBuf.setWriteCursor(len);
-        std::cout << "******2 respBuf =" << respBuf.dump(true, true) << std::endl;
-         */
-
-
-
     }
 
     /// register worker2 with the master
     {
         std::cout << "******3******* register worker 2 start" << std::endl;
         wCentral2.registerWithMaster();
-        /* &&&
-        LoaderMsg msg(LoaderMsg::MAST_WORKER_ADD_REQ, ++msgId, "127.0.0.1", masterPort);
-        BufferUdp msgData;
-        msg.serializeToData(msgData);
-        // create the proto buffer
-        lsst::qserv::proto::LdrMastWorkerAddReq protoBuf;
-        protoBuf.set_workerip(worker2IP);
-        protoBuf.set_workerport(worker2Port);
 
-        StringElement addWorkerBuf;
-        protoBuf.SerializeToString(&(addWorkerBuf.element));
-        addWorkerBuf.appendToData(msgData);
-
-        // &&& change this to be sent from the worker2Serv port.
-        socket.send_to(boost::asio::buffer(msgData.begin(), msgData.getCurrentWriteLength()), masterEndpoint);
-
-        BufferUdp respBuf;
-        udp::endpoint senderEndpoint;
-        size_t len = socket.receive_from(boost::asio::buffer(respBuf.getBuffer(), respBuf.getMaxLength()), senderEndpoint);
-        respBuf.setWriteCursor(len);
-        std::cout << "******3 respBuf =" << respBuf.dump(true, true) << std::endl;
-        */
         std::cout << "&&&******1************************************** end" << std::endl;
     }
 

@@ -50,6 +50,7 @@ namespace lsst {
 namespace qserv {
 namespace loader {
 
+/* &&&
 util::CommandTracked::Ptr WorkerListItem::createCommand() {
 
     CentralWorker* centralWorker = dynamic_cast<CentralWorker*>(_central);
@@ -63,6 +64,19 @@ util::CommandTracked::Ptr WorkerListItem::createCommand() {
     }
     return nullptr;
 }
+*/
+
+util::CommandTracked::Ptr WorkerListItem::WorkerNeedsMasterData::createCommand() {
+    auto item = workerListItem.lock();
+    if (item == nullptr) {
+        // TODO: should mark set the removal flag for this doListItem
+        return nullptr;
+    }
+    CentralWorker* centralWorker = dynamic_cast<CentralWorker*>(item->_central);
+        if (centralWorker != nullptr) {
+            return item->createCommandWorker(centralWorker);
+        }
+}
 
 util::CommandTracked::Ptr WorkerListItem::createCommandWorker(CentralWorker* centralW) {
      // Create a command to put on the pool to
@@ -75,10 +89,10 @@ util::CommandTracked::Ptr WorkerListItem::createCommandWorker(CentralWorker* cen
 
         void action(util::CmdData *data) override {
             /// Request all information the master has for one worker.
-            LOGS(_log, LOG_LVL_INFO, "&&& WorkerListItem::createCommand::WorkerReqCmd::action");
+            LOGS(_log, LOG_LVL_INFO, "&&& WorkerListItem::createCommand::WorkerReqCmd::action *******************");
 
             // TODO make a function for this, it's always going to be the same.
-            proto::LdrMastWorkerAddReq protoOurAddress;
+            proto::LdrNetAddress protoOurAddress;
             protoOurAddress.set_workerip(_centralW->getHostName());
             protoOurAddress.set_workerport(_centralW->getPort());
             StringElement eOurAddress(protoOurAddress.SerializeAsString());
@@ -105,7 +119,7 @@ util::CommandTracked::Ptr WorkerListItem::createCommandWorker(CentralWorker* cen
         uint32_t _name;
     };
 
-    LOGS(_log, LOG_LVL_INFO, "&&& WorkerListItem::createCommandWorker " << _name);
+    LOGS(_log, LOG_LVL_INFO, "&&& WorkerListItem::createCommandWorker ******************" << _name);
     return std::make_shared<WorkerReqCmd>(centralW, _name);
 }
 
@@ -144,7 +158,7 @@ util::CommandTracked::Ptr WorkerList::createCommandWorker(CentralWorker* central
             LOGS(_log, LOG_LVL_INFO, "&&& WorkerListItem::createCommand::WorkerReqCmd::action");
 
             // TODO make a function for this, it's always going to be the same.
-            proto::LdrMastWorkerAddReq protoOurAddress;
+            proto::LdrNetAddress protoOurAddress;
             protoOurAddress.set_workerip(_centralW->getHostName());
             protoOurAddress.set_workerport(_centralW->getPort());
             StringElement eOurAddress(protoOurAddress.SerializeAsString());
@@ -162,7 +176,8 @@ util::CommandTracked::Ptr WorkerList::createCommandWorker(CentralWorker* central
 
             /// Go through the existing list and add any that have not been add to the doList
             for (auto const& item : _nameMap) {
-                _centralW->addDoListItem(item.second);
+                item.second->addDoListItems(_centralW);
+                //_centralW->addDoListItem(item.second);
             }
         }
 
@@ -196,12 +211,11 @@ WorkerListItem::Ptr WorkerList::addWorker(std::string const& ip, short port) {
         return nullptr;
     }
     // Get an id and make new worker item
-    auto workerListItem = std::make_shared<WorkerListItem>(_sequence++, address, _central);
+    auto workerListItem = WorkerListItem::create(_sequence++, address, _central);
     _ipMap.insert(std::make_pair(address, workerListItem));
     _nameMap.insert(std::make_pair(workerListItem->getName(), workerListItem));
     LOGS(_log, LOG_LVL_INFO, "Added worker " << *workerListItem);
     _flagListChange();
-
 
     return workerListItem;
 }
@@ -250,12 +264,25 @@ bool WorkerList::sendListTo(uint64_t msgId, std::string const& ip, short port,
 
 
 bool WorkerList::workerListReceive(BufferUdp::Ptr const& data) {
-    LOGS(_log, LOG_LVL_INFO, "***************&&& workerListReceive data=" << data->dump());
+    LOGS(_log, LOG_LVL_INFO, " ***&&& workerListReceive data=" << data->dump());
     // &&& break open the data protobuffer and add it to our list.
+    /* &&&
     proto::LdrMastWorkerList protoList;
     StringElement::Ptr sData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+
     bool success = proto::ProtoImporter<proto::LdrMastWorkerList>::setMsgFrom(protoList, sData->element.data(), sData->element.length());
     if (not success) {
+        LOGS(_log, LOG_LVL_WARN, "WorkerList::workerListReceive Failed to parse list");
+        return false;
+    }
+    */
+    StringElement::Ptr sData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+    if (sData == nullptr) {
+        LOGS(_log, LOG_LVL_WARN, "WorkerList::workerListReceive Failed to parse list");
+        return false;
+    }
+    auto protoList = sData->protoParse<proto::LdrMastWorkerList>();
+    if (protoList == nullptr) {
         LOGS(_log, LOG_LVL_WARN, "WorkerList::workerListReceive Failed to parse list");
         return false;
     }
@@ -265,16 +292,20 @@ bool WorkerList::workerListReceive(BufferUdp::Ptr const& data) {
     {
         std::lock_guard<std::mutex> lock(_mapMtx);
         size_t initialSize = _nameMap.size();
-        _totalNumberOfWorkers = protoList.workercount(); // there may be more workers than will fit in a message.
-        int sz = protoList.worker_size();
+        _totalNumberOfWorkers = protoList->workercount(); // There may be more workers than will fit in a message.
+        int sz = protoList->worker_size();
 
         for (int j=0; j < sz; ++j) {
-            proto::WorkerListItem const& protoItem = protoList.worker(j);
+            proto::WorkerListItem const& protoItem = protoList->worker(j);
             uint32_t name = protoItem.name();
-            auto iter = _nameMap[name];
-            if (iter == nullptr) {
-                iter = std::make_shared<WorkerListItem>(name, _central);
+            // Most of the time, the worker will already be in the map.
+            auto item = _nameMap[name];
+            if (item == nullptr) {
+                item = WorkerListItem::create(name, _central);
+                _nameMap[name] = item;
                 strNames += std::to_string(name) + ",";
+                // _central->addDoListItem(item); &&&
+                item->addDoListItems(_central);
             }
         }
         sizeChange = _nameMap.size() - initialSize;
@@ -282,6 +313,8 @@ bool WorkerList::workerListReceive(BufferUdp::Ptr const& data) {
             _flagListChange();
         }
     }
+
+    infoReceived(); // Avoid asking for this info for a while.
     LOGS(_log, LOG_LVL_INFO, "workerListReceive added " << sizeChange << " names=" << strNames);
 
     return true;
@@ -290,14 +323,14 @@ bool WorkerList::workerListReceive(BufferUdp::Ptr const& data) {
 // must lock _mapMtx before calling this function
 void WorkerList::_flagListChange() {
     _wListChanged = true;
-    // TODO: &&& indicate to every WorkerItem in the list that it needs to send a message to its worker.
-
+    // TODO: &&& on Master only, flag each worker in the list that it needs to send an updated list to it's worker.
 }
 
-
-std::ostream& operator<<(std::ostream& os, NetworkAddress const& adr) {
-    os << "ip(" << adr.ip << ":" << adr.port << ")";
-    return os;
+void WorkerListItem::addDoListItems(Central *central) {
+    if (_workerUpdateNeedsMasterData == nullptr) {
+        _workerUpdateNeedsMasterData.reset(new WorkerNeedsMasterData(shared_from_this()));
+        central->addDoListItem(_workerUpdateNeedsMasterData);
+    }
 }
 
 

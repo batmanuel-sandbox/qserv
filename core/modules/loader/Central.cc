@@ -74,19 +74,25 @@ void Central::_checkDoList() {
 }
 
 
-void CentralWorker::monitorWorkers() {
+void CentralWorker::_monitorWorkers() {
     // Add _workerList to _doList so it starts checking new entries.
     _doList.addItem(_workerList);
 }
 
 
-void CentralWorker::registerWithMaster(){
+void CentralWorker::registerWithMaster() {
+    // &&& TODO: add a one shot item to keep calling _registerWithMaster until we have our name.
+    _registerWithMaster();
+}
+
+
+void CentralWorker::_registerWithMaster() {
 
     LoaderMsg msg(LoaderMsg::MAST_WORKER_ADD_REQ, getNextMsgId(), getHostName(), getPort());
     BufferUdp msgData;
     msg.serializeToData(msgData);
     // create the proto buffer
-    lsst::qserv::proto::LdrMastWorkerAddReq protoBuf;
+    lsst::qserv::proto::LdrNetAddress protoBuf;
     protoBuf.set_workerip(getHostName());
     protoBuf.set_workerport(getPort());
 
@@ -113,7 +119,8 @@ void CentralWorker::testSendBadMessage() {
 void CentralMaster::addWorker(std::string const& ip, short port) {
     auto item = _workerList->addWorker(ip, port);
     if (item != nullptr) {
-        _doList.addItem(item);
+        // _doList.addItem(item);  &&&
+        item->addDoListItems(this);
     }
 }
 

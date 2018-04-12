@@ -121,22 +121,33 @@ BufferUdp::Ptr WorkerServer::replyMsgReceived(boost::asio::ip::udp::endpoint con
 
 void WorkerServer::_msgRecieved(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
                                 boost::asio::ip::udp::endpoint const& senderEndpoint) {
+    bool success = true;
     // This is only really expected for parsing errors. Most responses to
     // requests come in as normal messages.
     StringElement::Ptr seData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+    if (seData == nullptr) {
+        success = false;
+    }
 
-    proto::LdrMsgReceived protoBuf;
+    /* &&&
+    c protoBuf;
     bool success = proto::ProtoImporter<proto::LdrMsgReceived>::setMsgFrom(
             protoBuf, seData->element.data(), seData->element.length());
+    */
+    std::unique_ptr<proto::LdrMsgReceived> protoBuf;
+    if (success) {
+        protoBuf = seData->protoParse<proto::LdrMsgReceived>();
+        if (protoBuf == nullptr) { success = false; }
+    }
 
     std::stringstream os;
     int status = LoaderMsg::STATUS_PARSE_ERR;
 
     if (success) {
-        auto originalId   = protoBuf.originalid();
-        auto originalKind = protoBuf.originalkind();
-        status            = protoBuf.status();
-        auto errMsg       = protoBuf.errmsg();
+        auto originalId   = protoBuf->originalid();
+        auto originalKind = protoBuf->originalkind();
+        status            = protoBuf->status();
+        auto errMsg       = protoBuf->errmsg();
         os << " sender=" << senderEndpoint <<
                 " id=" << originalId << " kind=" << originalKind << " status=" << status <<
                 " msg=" << errMsg;

@@ -34,6 +34,7 @@
 // qserv headers
 #include "loader/Central.h"
 #include "loader/LoaderMsg.h"
+#include "loader/NetworkAddress.h"
 #include "proto/ProtoImporter.h"
 #include "proto/loader.pb.h"
 
@@ -56,11 +57,10 @@ BufferUdp::Ptr MasterServer::parseMsg(BufferUdp::Ptr const& data,
     LoaderMsg inMsg;
     try {
         inMsg.parseFromData(*data);
-    } catch (LoaderMsgErr exc) {
+    } catch (LoaderMsgErr const& exc) {
         std::string errMsg("MasterServer::parseMsg inMsg garbled exception ");
         errMsg += exc.what();
         LOGS(_log, LOG_LVL_ERROR, errMsg);
-        // &&& sending it back is likely pointless.
         sendData = replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, errMsg);
         return sendData;
     }
@@ -81,6 +81,7 @@ BufferUdp::Ptr MasterServer::parseMsg(BufferUdp::Ptr const& data,
             break;
         case LoaderMsg::MAST_WORKER_INFO_REQ:
             // TODO: Request information about a specific worker via MAST_WORKER_INFO
+            sendData = workerInfoRequest(inMsg, data, senderEndpoint);
             break;
         case LoaderMsg::MAST_WORKER_ADD_REQ:
             sendData = workerAddRequest(inMsg, data, senderEndpoint);
@@ -145,23 +146,25 @@ BufferUdp::Ptr MasterServer::replyMsgReceived(boost::asio::ip::udp::endpoint con
 BufferUdp::Ptr MasterServer::workerAddRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
                                               boost::asio::ip::udp::endpoint const& senderEndpoint) {
 
-    proto::LdrMastWorkerAddReq addReq;
+    /* &&&
+    proto::LdrNetAddress addReq; // &&& rename addReq
 
     //MsgElement::Ptr p = MsgElement::retrieve(*data); &&&
-    StringElement::Ptr addReqData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
-    if (addReqData == nullptr) {
+    StringElement::Ptr addrData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+    if (addrData == nullptr) {
         return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR,
                                    "workerAddRequest protobuf string retrieve failed");
     }
 
 
-    LOGS(_log, LOG_LVL_INFO, "MasterServer::workerAddRequest from " << senderEndpoint << " len=" << addReqData->element.length());
-    bool success = proto::ProtoImporter<proto::LdrMastWorkerAddReq>::setMsgFrom(addReq, addReqData->element.data(), addReqData->element.length());
+    LOGS(_log, LOG_LVL_INFO, "MasterServer::workerAddRequest from " << senderEndpoint << " len=" << addrData->element.length());
+    bool success = proto::ProtoImporter<proto::LdrNetAddress>::setMsgFrom(addReq, addrData->element.data(), addrData->element.length());
     if (not success) {
         std::string errStr("STATUS_PARSE_ERR parse error in MasterServer::workerAddRequest");
         LOGS(_log, LOG_LVL_WARN, errStr);
         return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, errStr);
     }
+
 
     // TODO: This should be on separate thread &&&
     _centralMaster->addWorker(addReq.workerip(), addReq.workerport());
@@ -172,12 +175,30 @@ BufferUdp::Ptr MasterServer::workerAddRequest(LoaderMsg const& inMsg, BufferUdp:
 
     // return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_SUCCESS, "AddReq"); &&&
     return nullptr;
+    */
+
+    /// Message contains the network address of a worker to add to our list.
+    auto addReq = NetworkAddress::create(data, "MasterServer::workerAddRequest");
+    if (addReq == nullptr) {
+        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR,
+                "STATUS_PARSE_ERR parse error workerAddRequest ");
+    }
+
+    // Once the worker has been added, its name will be sent to all other workers.
+    _centralMaster->addWorker(addReq->ip, addReq->port);
+
+    LOGS(_log, LOG_LVL_INFO, "Adding worker ip=" << addReq->ip << " port=" << addReq->port);
+
+    return nullptr;
 }
 
 
 BufferUdp::Ptr MasterServer::workerListRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
                                                boost::asio::ip::udp::endpoint const& senderEndpoint) {
-    proto::LdrMastWorkerAddReq addReq;
+    /* &&&
+    LOGS(_log, LOG_LVL_INFO, "  &&& MasterServer::workerListRequest");
+
+    proto::LdrNetAddress addReq;
 
     //MsgElement::Ptr p = MsgElement::retrieve(*data); &&&
     StringElement::Ptr reqData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
@@ -188,11 +209,24 @@ BufferUdp::Ptr MasterServer::workerListRequest(LoaderMsg const& inMsg, BufferUdp
     }
 
     LOGS(_log, LOG_LVL_INFO, "MasterServer::workerListRequest from " << senderEndpoint << " len=" << reqData->element.length());
-    bool success = proto::ProtoImporter<proto::LdrMastWorkerAddReq>::setMsgFrom(addReq, reqData->element.data(), reqData->element.length());
+    bool success = proto::ProtoImporter<proto::LdrNetAddress>::setMsgFrom(addReq, reqData->element.data(), reqData->element.length());
     if (not success) {
         return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR,
                                    "parse error in workerAddRequest");
     }
+    */
+
+    std::string funcName("MasterServer::workerListRequest");
+    LOGS(_log, LOG_LVL_INFO, "  &&& " << funcName);
+
+    auto addr = NetworkAddress::create(data, funcName);
+    if (addr == nullptr) {
+        std::string errStr("STATUS_PARSE_ERR parse error in " + funcName);
+        LOGS(_log, LOG_LVL_ERROR, errStr);
+        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, errStr);
+    }
+
+    /* &&&
     LOGS(_log, LOG_LVL_INFO, "***&&& workerListRequest calling sendListTo " << senderEndpoint);
     // TODO: put this in a separate thread.
     auto workerList = _centralMaster->getWorkerList();
@@ -202,8 +236,58 @@ BufferUdp::Ptr MasterServer::workerListRequest(LoaderMsg const& inMsg, BufferUdp
 
     // return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_SUCCESS, "ListReq"); &&&
     return nullptr;
+    */
+
+    LOGS(_log, LOG_LVL_INFO, "&&& workerListRequest calling sendListTo " << senderEndpoint);
+    // TODO: put this in a separate thread.
+    auto workerList = _centralMaster->getWorkerList();
+    workerList->sendListTo(inMsg.msgId->element, addr->ip, addr->port, getOurHostName(), getOurPort());
+    LOGS(_log, LOG_LVL_INFO, "&&& workerListRequest done sendListTo ");
+
+    return nullptr;
 }
 
+
+BufferUdp::Ptr MasterServer::workerInfoRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
+                                 boost::asio::ip::udp::endpoint const& senderEndpoint) {
+    LOGS(_log, LOG_LVL_INFO, "  &&& MasterServer::workerInfoRequest **************");
+
+    try {
+        std::string const funcName("MasterServer::workerInfoRequest");
+        NetworkAddress::UPtr nAddr = NetworkAddress::create(data, funcName);
+        if (nAddr == nullptr) {
+            throw LoaderMsgErr(funcName, __FILE__, __LINE__);
+        }
+
+        /* &&&
+        proto::WorkerListItem protoItem;
+        StringElement::Ptr itemData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+        if (itemData == nullptr) {
+            throw LoaderMsgErr(funcName, __FILE__, __LINE__);
+        }
+        LOGS(_log, LOG_LVL_INFO, funcName << " from " << senderEndpoint << " len=" << itemData->element.length());
+        auto wName = itemData->protoParse<proto::WorkerListItem>();
+        */
+        auto protoItem = StringElement::protoParse<proto::WorkerListItem>(data);
+        if (protoItem == nullptr) {
+            throw LoaderMsgErr(funcName, __FILE__, __LINE__);
+        }
+
+        auto workerName = protoItem->name();
+        LOGS(_log, LOG_LVL_INFO, "************************* &&& Master got name=" << workerName);
+
+        /// &&& find the worker name in the map.
+
+        /// &&& return worker's name, netaddress, and range
+
+
+
+    } catch (LoaderMsgErr &msgErr) {
+        LOGS(_log, LOG_LVL_ERROR, msgErr.what());
+        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, msgErr.what());
+    }
+    return nullptr;
+}
 
 }}} // namespace lsst:qserv::loader
 

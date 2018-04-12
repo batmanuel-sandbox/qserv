@@ -110,10 +110,16 @@ public:
         return ((!_needInfo && _oneShot) || _remove);
     }
 
+    /// The info has been updated, so no need to ask for it for a while.
     void infoReceived() {
         std::lock_guard<std::mutex> lock(_mtx);
         _needInfo = false;
         _timeOut.triggered();
+    }
+
+    void setNeedInfo() {
+        std::lock_guard<std::mutex> lock(_mtx);
+        _needInfo = true;
     }
 
     virtual util::CommandTracked::Ptr createCommand()=0;
