@@ -32,7 +32,8 @@
 
 // Qserv headers
 #include "loader/MasterServer.h"
-#include "loader/WorkerList.h"
+#include "loader/MWorkerList.h"
+#include "loader/WWorkerList.h"
 #include "loader/WorkerServer.h"
 #include "util/ThreadPool.h"
 
@@ -67,7 +68,7 @@ public:
 
     int getErrCount() const { return _server->getErrCount(); }
 
-    WorkerList::Ptr getWorkerList() const { return _workerList; }
+    // WorkerList::Ptr getWorkerList() const { return _workerList; } &&&
 
     void sendBufferTo(std::string const& host, int port, BufferUdp& sendBuf) {
         _server->sendBufferTo(host, port, sendBuf);
@@ -93,7 +94,7 @@ protected:
 
     std::string _masterHostName;    // &&& struct to keep hostName + port (WorkerList.h->NetworkAddress?)
     int _masterPort;
-    WorkerList::Ptr _workerList{new WorkerList(this)}; // &&& May not need to be a pointer.
+    // WorkerList::Ptr _workerList{new WorkerList(this)}; // &&& May not need to be a pointer. &&&
     
     std::atomic<uint64_t> _sequence{1};
 
@@ -120,6 +121,10 @@ public:
         _monitorWorkers();
     }
 
+    ~CentralWorker() override { _wWorkerList.reset(); }
+
+    WWorkerList::Ptr getWorkerList() const { return _wWorkerList; }
+
     std::string getHostName() const { return _hostName; }
     int getPort() const { return _port; }
 
@@ -133,6 +138,7 @@ private:
 
     const std::string _hostName;
     const int         _port;
+    WWorkerList::Ptr _wWorkerList{new WWorkerList(this)};
 
     // TODO _range both int and string;
     // TODO _directorIdMap
@@ -148,9 +154,14 @@ public:
         _server = std::make_shared<MasterServer>(_ioService, _masterHostName, _masterPort, this);
     }
 
-    void addWorker(std::string const& ip, short port);
+    ~CentralMaster() override { _mWorkerList.reset(); }
+
+    void addWorker(std::string const& ip, int port);
+
+    MWorkerList::Ptr getWorkerList() const { return _mWorkerList; }
 
 private:
+    MWorkerList::Ptr _mWorkerList{new MWorkerList(this)};
 };
 
 }}} // namespace lsst::qserv::loader

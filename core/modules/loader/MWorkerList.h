@@ -21,9 +21,8 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  *
  */
-#if 0 // &&&
-#ifndef LSST_QSERV_LOADER_WORKERLIST_H_
-#define LSST_QSERV_LOADER_WORKERLIST_H_
+#ifndef LSST_QSERV_LOADER_MWORKERLIST_H_
+#define LSST_QSERV_LOADER_MWORKERLIST_H_
 
 // system headers
 #include <atomic>
@@ -36,7 +35,6 @@
 #include "loader/DoList.h"
 #include "loader/NetworkAddress.h"
 #include "loader/StringRange.h"
-#include "loader/WorkerList.h"
 
 
 namespace lsst {
@@ -50,41 +48,41 @@ class LoaderMsg;
 
 
 
-
 /// Standard information for a single worker, IP address, key range, timeouts.
-//class WorkerListItem : public DoListItem {
-class WorkerListItem : public std::enable_shared_from_this<WorkerListItem> {
+class MWorkerListItem : public std::enable_shared_from_this<MWorkerListItem> {
 public:
-    using Ptr = std::shared_ptr<WorkerListItem>;
-    using WPtr = std::weak_ptr<WorkerListItem>;
+    using Ptr = std::shared_ptr<MWorkerListItem>;
+    using WPtr = std::weak_ptr<MWorkerListItem>;
 
-    static WorkerListItem::Ptr create(uint32_t name, Central *central) {
-        return WorkerListItem::Ptr(new WorkerListItem(name, central));
+    static MWorkerListItem::Ptr create(uint32_t name, CentralMaster *central) {
+        return MWorkerListItem::Ptr(new MWorkerListItem(name, central));
     }
-    static WorkerListItem::Ptr create(uint32_t name, NetworkAddress const& address, Central *central) {
-        return WorkerListItem::Ptr(new WorkerListItem(name, address, central));
+    static MWorkerListItem::Ptr create(uint32_t name, NetworkAddress const& address, CentralMaster *central) {
+        return MWorkerListItem::Ptr(new MWorkerListItem(name, address, central));
     }
 
 
-    WorkerListItem() = delete;
-    WorkerListItem(WorkerListItem const&) = delete;
-    WorkerListItem& operator=(WorkerListItem const&) = delete;
+    MWorkerListItem() = delete;
+    MWorkerListItem(MWorkerListItem const&) = delete;
+    MWorkerListItem& operator=(MWorkerListItem const&) = delete;
 
-    virtual ~WorkerListItem() = default;
+    virtual ~MWorkerListItem() = default;
 
     NetworkAddress getAddress() const { return _address; }
     uint32_t getName() const { return _name; }
 
     void addDoListItems(Central *central);
 
-    //util::CommandTracked::Ptr createCommand() override;
-    util::CommandTracked::Ptr createCommandWorker(CentralWorker* centralW);
+    void flagNeedToSendList();
+
     util::CommandTracked::Ptr createCommandMaster(CentralMaster* centralM);
 
-    friend std::ostream& operator<<(std::ostream& os, WorkerListItem const& item);
+    void sendListToWorkerInfoReceived();
+
+    friend std::ostream& operator<<(std::ostream& os, MWorkerListItem const& item);
 private:
-    WorkerListItem(uint32_t name, Central* central) : _name(name), _central(central) {}
-    WorkerListItem(uint32_t name, NetworkAddress const& address, Central* central)
+    MWorkerListItem(uint32_t name, CentralMaster* central) : _name(name), _central(central) {}
+    MWorkerListItem(uint32_t name, NetworkAddress const& address, CentralMaster* central)
          : _name(name), _address(address), _central(central) {}
 
     uint32_t _name;
@@ -92,63 +90,61 @@ private:
     TimeOut _lastContact{std::chrono::minutes(10)};  ///< Last time information was received from this worker
     StringRange _range;  ///< min and max range for this worker.
 
-    Central* _central;
+    CentralMaster* _central;
 
-    struct WorkerNeedsMasterData : public DoListItem {
-        WorkerNeedsMasterData(WorkerListItem::Ptr const& workerListItem_) :  workerListItem(workerListItem_) {}
-        WorkerListItem::WPtr workerListItem;
+    // Occasionally send a list of all workers to the worker represented by this object.
+    struct SendListToWorker : public DoListItem {
+        SendListToWorker(MWorkerListItem::Ptr const& mWorkerListItem_, CentralMaster *central_) :
+            mWorkerListItem(mWorkerListItem_), central(central_) {}
+        MWorkerListItem::WPtr mWorkerListItem;
+        CentralMaster *central;
         util::CommandTracked::Ptr createCommand() override;
     };
-
-    DoListItem::Ptr _workerUpdateNeedsMasterData;
+    DoListItem::Ptr _sendListToWorker;
+    std::mutex _doListItemsMtx; ///< protects _sendListToWorker
 };
 
 
 
-class WorkerList : public DoListItem {
+class MWorkerList : public DoListItem {
 public:
-    using Ptr = std::shared_ptr<WorkerList>;
+    using Ptr = std::shared_ptr<MWorkerList>;
 
-    WorkerList(Central* central) : _central(central) {}
-    WorkerList() = delete;
-    WorkerList(WorkerList const&) = delete;
-    WorkerList& operator=(WorkerList const&) = delete;
+    MWorkerList(CentralMaster* central) : _central(central) {}
+    MWorkerList() = delete;
+    MWorkerList(MWorkerList const&) = delete;
+    MWorkerList& operator=(MWorkerList const&) = delete;
 
-    virtual ~WorkerList() = default;
+    virtual ~MWorkerList() = default;
 
     ///// Master only //////////////////////
     // Returns pointer to new item if an item was created.
-    WorkerListItem::Ptr addWorker(std::string const& ip, short port);
+    MWorkerListItem::Ptr addWorker(std::string const& ip, short port);
 
     // Returns true of message could be parsed and a send will be attempted.
     bool sendListTo(uint64_t msgId, std::string const& ip, short port,
                     std::string const& outHostName, short ourPort);
 
-
-    //// Worker only ////////////////////////
-    // Receive a list of workers from the master.
-    bool workerListReceive(BufferUdp::Ptr const& data);
-
     util::CommandTracked::Ptr createCommand() override;
-    util::CommandTracked::Ptr createCommandWorker(CentralWorker* centralW);
+    // util::CommandTracked::Ptr createCommandWorker(CentralWorker* centralW); &&&
     util::CommandTracked::Ptr createCommandMaster(CentralMaster* centralM);
 
 protected:
     void _flagListChange();
 
-    Central* _central;
-    std::map<uint32_t, WorkerListItem::Ptr> _nameMap;
-    std::map<NetworkAddress, WorkerListItem::Ptr> _ipMap;
+    CentralMaster* _central;
+    std::map<uint32_t, MWorkerListItem::Ptr> _nameMap;
+    std::map<NetworkAddress, MWorkerListItem::Ptr> _ipMap;
     bool _wListChanged{false}; ///< true if the list has changed
     BufferUdp::Ptr _stateListData; ///< message
     uint32_t _totalNumberOfWorkers{0}; ///< total number of workers according to the master.
     std::mutex _mapMtx; ///< protects _nameMap, _ipMap, _wListChanged
 
     std::atomic<uint32_t> _sequence{1};
+
 };
 
 
 }}} // namespace lsst::qserv::loader
 
-#endif // LSST_QSERV_LOADER_WORKERLIST_H_
-#endif
+#endif // LSST_QSERV_LOADER_MWORKERLIST_H_

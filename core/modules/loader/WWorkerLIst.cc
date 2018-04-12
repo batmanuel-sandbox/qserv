@@ -21,10 +21,9 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  */
 
-#if 0 // &&&
 
 // Class header
-#include "loader/WorkerList.h"
+#include "loader/WWorkerList.h"
 
 // System headers
 #include <boost/asio.hpp>
@@ -44,43 +43,24 @@
 #include "lsst/log/Log.h"
 
 namespace {
-LOG_LOGGER _log = LOG_GET("lsst.qserv.loader.WorkerList");
+LOG_LOGGER _log = LOG_GET("lsst.qserv.loader.WWorkerList");
 }
 
 namespace lsst {
 namespace qserv {
 namespace loader {
 
-/* &&&
-util::CommandTracked::Ptr WorkerListItem::createCommand() {
 
-    CentralWorker* centralWorker = dynamic_cast<CentralWorker*>(_central);
-    if (centralWorker != nullptr) {
-        return createCommandWorker(centralWorker);
-    }
-
-    CentralMaster* centralMaster = dynamic_cast<CentralMaster*>(_central);
-    if (centralMaster != nullptr) {
-        return createCommandMaster(centralMaster);
-    }
-    return nullptr;
-}
-*/
-
-util::CommandTracked::Ptr WorkerListItem::WorkerNeedsMasterData::createCommand() {
-    auto item = workerListItem.lock();
+util::CommandTracked::Ptr WWorkerListItem::WorkerNeedsMasterData::createCommand() {
+    auto item = wWorkerListItem.lock();
     if (item == nullptr) {
         // TODO: should mark set the removal flag for this doListItem
         return nullptr;
     }
-    CentralWorker* centralWorker = dynamic_cast<CentralWorker*>(item->_central);
-    if (centralWorker != nullptr) {
-        return item->createCommandWorker(centralWorker);
-    }
-    return nullptr;
+    return item->createCommandWorker(central);
 }
 
-util::CommandTracked::Ptr WorkerListItem::createCommandWorker(CentralWorker* centralW) {
+util::CommandTracked::Ptr WWorkerListItem::createCommandWorker(CentralWorker* centralW) {
      // Create a command to put on the pool to
      //  - create an io_contex
      //  - ask the master about a server with _name
@@ -91,7 +71,7 @@ util::CommandTracked::Ptr WorkerListItem::createCommandWorker(CentralWorker* cen
 
         void action(util::CmdData *data) override {
             /// Request all information the master has for one worker.
-            LOGS(_log, LOG_LVL_INFO, "&&& WorkerListItem::createCommand::WorkerReqCmd::action *******************");
+            LOGS(_log, LOG_LVL_INFO, "&&& WWorkerListItem::createCommand::WorkerReqCmd::action *******************");
 
             // TODO make a function for this, it's always going to be the same.
             proto::LdrNetAddress protoOurAddress;
@@ -121,19 +101,20 @@ util::CommandTracked::Ptr WorkerListItem::createCommandWorker(CentralWorker* cen
         uint32_t _name;
     };
 
-    LOGS(_log, LOG_LVL_INFO, "&&& WorkerListItem::createCommandWorker ******************" << _name);
+    LOGS(_log, LOG_LVL_INFO, "&&& WWorkerListItem::createCommandWorker ******************" << _name);
     return std::make_shared<WorkerReqCmd>(centralW, _name);
 }
 
 
-util::CommandTracked::Ptr WorkerListItem::createCommandMaster(CentralMaster* centralMaster) {
-    LOGS(_log, LOG_LVL_ERROR, "&&& WorkerListItem::createCommandMaster This function needs to do something!!!!!!!!!");
+util::CommandTracked::Ptr WWorkerListItem::createCommandMaster(CentralMaster* centralMaster) {
+    LOGS(_log, LOG_LVL_ERROR, "&&& WWorkerListItem::createCommandMaster This function needs to do something!!!!!!!!!");
     // &&& ask worker for current range, neighbors.
     return nullptr;
 }
 
 
-util::CommandTracked::Ptr WorkerList::createCommand() {
+util::CommandTracked::Ptr WWorkerList::createCommand() {
+    /* &&&
     CentralWorker* centralWorker = dynamic_cast<CentralWorker*>(_central);
       if (centralWorker != nullptr) {
           return createCommandWorker(centralWorker);
@@ -144,20 +125,22 @@ util::CommandTracked::Ptr WorkerList::createCommand() {
           return createCommandMaster(centralMaster);
       }
       return nullptr;
+     */
+    return createCommandWorker(_central);
 }
 
 
-util::CommandTracked::Ptr WorkerList::createCommandWorker(CentralWorker* centralW) {
+util::CommandTracked::Ptr WWorkerList::createCommandWorker(CentralWorker* centralW) {
     // On the worker, need to occasionally ask for a list of workers from the master
     // and make sure each of those workers is on the doList
     class MastWorkerListReqCmd : public util::CommandTracked {
     public:
-        MastWorkerListReqCmd(CentralWorker* centralW, std::map<uint32_t, WorkerListItem::Ptr> nameMap)
+        MastWorkerListReqCmd(CentralWorker* centralW, std::map<uint32_t, WWorkerListItem::Ptr> nameMap)
             : _centralW(centralW), _nameMap(nameMap) {}
 
         void action(util::CmdData *data) override {
             /// Request a list of all workers.
-            LOGS(_log, LOG_LVL_INFO, "&&& WorkerListItem::createCommand::WorkerReqCmd::action");
+            LOGS(_log, LOG_LVL_INFO, "&&& WWorkerListItem::createCommand::WorkerReqCmd::action ^^^^^^^^^^^^^^^^^^^^^^^^^");
 
             // TODO make a function for this, it's always going to be the same.
             proto::LdrNetAddress protoOurAddress;
@@ -185,23 +168,16 @@ util::CommandTracked::Ptr WorkerList::createCommandWorker(CentralWorker* central
 
     private:
         CentralWorker* _centralW;
-        std::map<uint32_t, WorkerListItem::Ptr> _nameMap;
+        std::map<uint32_t, WWorkerListItem::Ptr> _nameMap;
     };
 
-    LOGS(_log, LOG_LVL_INFO, "&&& WorkerList::createCommandWorker");
+    LOGS(_log, LOG_LVL_INFO, "&&& WorkerList::createCommandWorker ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
     return std::make_shared<MastWorkerListReqCmd>(centralW, _nameMap);
 }
 
-
-util::CommandTracked::Ptr WorkerList::createCommandMaster(CentralMaster* centralM) {
-    // &&& The master probably doesn't need to make any checks on the list, it just
-    // &&& wants to make sure all of its items are on the doList.
-    return nullptr;
-}
-
-
+/* &&& may need this one for worker
 // Returns true when new worker added
-WorkerListItem::Ptr WorkerList::addWorker(std::string const& ip, short port) {
+WWorkerListItem::Ptr WWorkerList::addWorker(std::string const& ip, short port) {
     NetworkAddress address(ip, port);
 
     // If it is already in the map, do not change its name.
@@ -213,7 +189,7 @@ WorkerListItem::Ptr WorkerList::addWorker(std::string const& ip, short port) {
         return nullptr;
     }
     // Get an id and make new worker item
-    auto workerListItem = WorkerListItem::create(_sequence++, address, _central);
+    auto workerListItem = WWorkerListItem::create(_sequence++, address, _central);
     _ipMap.insert(std::make_pair(address, workerListItem));
     _nameMap.insert(std::make_pair(workerListItem->getName(), workerListItem));
     LOGS(_log, LOG_LVL_INFO, "Added worker " << *workerListItem);
@@ -221,10 +197,10 @@ WorkerListItem::Ptr WorkerList::addWorker(std::string const& ip, short port) {
 
     return workerListItem;
 }
+*/
 
-
-
-bool WorkerList::sendListTo(uint64_t msgId, std::string const& ip, short port,
+/* &&&
+bool WWorkerListItemList::sendListTo(uint64_t msgId, std::string const& ip, short port,
                             std::string const& ourHostName, short ourPort) {
     NetworkAddress address(ip, port);
     StringElement workerList;
@@ -238,8 +214,8 @@ bool WorkerList::sendListTo(uint64_t msgId, std::string const& ip, short port,
             proto::LdrMastWorkerList protoList;
             protoList.set_workercount(_nameMap.size());
             for (auto const& item : _nameMap ) {
-                proto::WorkerListItem* protoItem = protoList.add_worker();
-                WorkerListItem::Ptr wListItem = item.second;
+                proto::WWorkerListItem* protoItem = protoList.add_worker();
+                WWorkerListItem::Ptr wListItem = item.second;
                 protoItem->set_name(wListItem->getName());
             }
             protoList.SerializeToString(&(workerList.element));
@@ -263,9 +239,10 @@ bool WorkerList::sendListTo(uint64_t msgId, std::string const& ip, short port,
     }
     return true;
 }
+*/
 
 
-bool WorkerList::workerListReceive(BufferUdp::Ptr const& data) {
+bool WWorkerList::workerListReceive(BufferUdp::Ptr const& data) {
     LOGS(_log, LOG_LVL_INFO, " ***&&& workerListReceive data=" << data->dump());
     // &&& break open the data protobuffer and add it to our list.
     /* &&&
@@ -302,8 +279,10 @@ bool WorkerList::workerListReceive(BufferUdp::Ptr const& data) {
             uint32_t name = protoItem.name();
             // Most of the time, the worker will already be in the map.
             auto item = _nameMap[name];
+            LOGS(_log, LOG_LVL_INFO, j << "&&& ^^^^^^^^^^^^^ _nameMap got name=" << name << " item=" << item);
             if (item == nullptr) {
-                item = WorkerListItem::create(name, _central);
+                LOGS(_log, LOG_LVL_INFO, "&&& ^^^^^^^^^^^^^ nullptr name=" << name);
+                item = WWorkerListItem::create(name, _central);
                 _nameMap[name] = item;
                 strNames += std::to_string(name) + ",";
                 // _central->addDoListItem(item); &&&
@@ -323,20 +302,21 @@ bool WorkerList::workerListReceive(BufferUdp::Ptr const& data) {
 }
 
 // must lock _mapMtx before calling this function
-void WorkerList::_flagListChange() {
+void WWorkerList::_flagListChange() {
     _wListChanged = true;
-    // TODO: &&& on Master only, flag each worker in the list that it needs to send an updated list to it's worker.
+
 }
 
-void WorkerListItem::addDoListItems(Central *central) {
+void WWorkerListItem::addDoListItems(Central *central) {
+    LOGS(_log, LOG_LVL_INFO, "&&& ^^^^^^^^^^^^^^^^^^^^^^^^ WWorkerListItem::addDoListItems");
     if (_workerUpdateNeedsMasterData == nullptr) {
-        _workerUpdateNeedsMasterData.reset(new WorkerNeedsMasterData(shared_from_this()));
+        _workerUpdateNeedsMasterData.reset(new WorkerNeedsMasterData(shared_from_this(), _central));
         central->addDoListItem(_workerUpdateNeedsMasterData);
     }
 }
 
 
-std::ostream& operator<<(std::ostream& os, WorkerListItem const& item) {
+std::ostream& operator<<(std::ostream& os, WWorkerListItem const& item) {
     os << "name=" << item._name << " address=" << item._address;
     return os;
 }
@@ -345,4 +325,4 @@ std::ostream& operator<<(std::ostream& os, WorkerListItem const& item) {
 }}} // namespace lsst::qserv::loader
 
 
-#endif // &&&
+

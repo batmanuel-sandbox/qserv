@@ -54,7 +54,7 @@ Central::~Central() {
     for (std::thread& thd : _ioServiceThreads) {
         thd.join();
     }
-    _workerList.reset();
+    //_workerList.reset(); &&&
 }
 
 
@@ -76,12 +76,13 @@ void Central::_checkDoList() {
 
 void CentralWorker::_monitorWorkers() {
     // Add _workerList to _doList so it starts checking new entries.
-    _doList.addItem(_workerList);
+    LOGS(_log, LOG_LVL_INFO, "&&& ^^^^^^^^^^^^^^^^^^^^^^ CentralWorker::_monitorWorkers()");
+    _doList.addItem(_wWorkerList);
 }
 
 
 void CentralWorker::registerWithMaster() {
-    // &&& TODO: add a one shot item to keep calling _registerWithMaster until we have our name.
+    // &&& TODO: add a one shot DoList item to keep calling _registerWithMaster until we have our name.
     _registerWithMaster();
 }
 
@@ -116,8 +117,9 @@ void CentralWorker::testSendBadMessage() {
 
 
 
-void CentralMaster::addWorker(std::string const& ip, short port) {
-    auto item = _workerList->addWorker(ip, port);
+void CentralMaster::addWorker(std::string const& ip, int port) {
+    LOGS(_log, LOG_LVL_INFO, "&&& Master::addWorker");
+    auto item = _mWorkerList->addWorker(ip, port);
     if (item != nullptr) {
         // _doList.addItem(item);  &&&
         item->addDoListItems(this);
