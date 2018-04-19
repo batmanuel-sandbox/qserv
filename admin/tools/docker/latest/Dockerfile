@@ -1,11 +1,10 @@
-FROM debian:jessie
+FROM debian:stretch
 MAINTAINER Fabrice Jammes <fabrice.jammes@in2p3.fr>
 
 RUN sh -c "echo \"BUILD ID: $(date '+%Y%m%d_%H%M%S')\" > /BUILD_ID"
 
 # Start with this long step not to re-run it on
 # each Dockerfile update
-RUN echo "deb http://ftp.debian.org/debian jessie-backports main" >> /etc/apt/sources.list
 RUN apt-get -y update && \
     apt-get -y install apt-utils && \
     apt-get -y upgrade && \
@@ -28,13 +27,11 @@ RUN apt-get -y install bison \
         libssl-dev \
         make \
         ncurses-dev \
-        openjdk-7-jre-headless \
+        openjdk-8-jre-headless \
         openssl \
         patch \
         uuid-dev \
         zlib1g-dev
-
-RUN apt-get --yes -t jessie-backports install cmake
 
 RUN groupadd qserv && \
     useradd -m -g qserv qserv && \
