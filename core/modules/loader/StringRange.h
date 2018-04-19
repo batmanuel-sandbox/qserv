@@ -37,7 +37,8 @@ namespace lsst {
 namespace qserv {
 namespace loader {
 
-
+/// Class for storing the range of a single worker.
+/// This is likely to become a template class, hence lots of stuff in the header.
 class StringRange {
 public:
     using Ptr = std::shared_ptr<StringRange>;
@@ -50,20 +51,20 @@ public:
 
     void setAllInclusiveRange() {
         _min = "";
-        _largest = true;
+        _unlimited = true;
         setValid();
     }
 
     bool setMin(std::string const& val) {
-        if (not _largest && val > _max) {
+        if (not _unlimited && val > _max) {
             return false;
         }
         _min = val;
     }
 
-    bool setMax(std::string const& val, bool largest=false) {
-        if (largest) {
-            _largest = true;
+    bool setMax(std::string const& val, bool unlimited=false) {
+        if (unlimited) {
+            _unlimited = true;
             if (val > _max) { _max = val; }
             return true;
         }
@@ -74,9 +75,9 @@ public:
         return true;
     }
 
-    bool setMinMax(std::string const& vMin, std::string const& vMax, bool largest=false) {
-        if (largest) {
-            _largest = true;
+    bool setMinMax(std::string const& vMin, std::string const& vMax, bool unlimited=false) {
+        if (unlimited) {
+            _unlimited = true;
             _min = vMin;
             _max = (vMax > _min) ? vMax : _min;
             return true;
@@ -89,23 +90,34 @@ public:
     }
 
     bool setValid() {
-        if (!_largest && _max < _min) {
+        if (!_unlimited && _max < _min) {
             return false;
         }
         _valid = true;
         return true;
     }
 
+    /// Return true if other functionally equivalent.
+    bool equal(StringRange const& other) {
+        if (_valid != other._valid) { return false; }
+        if (not _valid) { return true; }  // both invalid
+        if (_min != other._min) { return false; }
+        if (_unlimited != other._unlimited) { return false; }
+        if (_unlimited) { return true; } // both same _min and _unlimited
+        if (_max != other._max) { return false; }
+        return true;
+    }
+
     bool getValid() const { return _valid; }
-    bool getLargest() const { return _largest; }
+    bool getUnlimited() const { return _unlimited; }
     std::string getMin() const { return _min; }
     std::string getMax() const { return _max; }
 
-
+    friend std::ostream& operator<<(std::ostream&, StringRange const&);
 
 private:
     bool        _valid{false}; ///< true if range is valid
-    bool        _largest{false}; ///< true if the range includes largest possible values.
+    bool        _unlimited{false}; ///< true if the range includes largest possible values.
     std::string _min; ///< Smallest value = ""
     std::string _max; ///<
 

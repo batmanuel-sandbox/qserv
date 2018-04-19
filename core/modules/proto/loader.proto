@@ -42,22 +42,30 @@ message LdrNetAddress {
 
 
 message WorkerRangeString {
-    required string min  = 1; 
-    required string max  = 2;
+    required bool valid  = 1;
+    required string min  = 2; 
+    required string max  = 3;
+    required bool maxunlimited = 4;
 }
 
 
 message WorkerRangeInt {
-	required uint64 minint  = 1;
-	required uint64 maxint  = 2; 
+    required bool valid     = 1;
+	required uint64 minint  = 2;
+	required uint64 maxint  = 3;
+	required bool maxunlimited = 4;
+}
+
+message WorkerRange {
+    optional WorkerRangeString rangeStr = 3;
+    optional WorkerRangeInt rangeInt = 4;
 }
 
 
 message WorkerListItem {
     required uint32 name    = 1; // worker's id number
     optional LdrNetAddress address = 2;
-    optional WorkerRangeString rangeStr = 3;
-    optional WorkerRangeInt rangeInt = 4;
+    optional WorkerRangeString rangestr = 3; // TODO replace with WorkerRange
 }
 
 

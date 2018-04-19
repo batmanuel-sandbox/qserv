@@ -74,6 +74,12 @@ void Central::_checkDoList() {
 }
 
 
+std::string CentralWorker::getOurLogId() {
+    std::stringstream os;
+    os << "(w name=" << _ourName << " addr=" << _hostName << ":" << _port << ")";
+    return os.str();
+}
+
 void CentralWorker::_monitorWorkers() {
     // Add _workerList to _doList so it starts checking new entries.
     LOGS(_log, LOG_LVL_INFO, "&&& ^^^^^^^^^^^^^^^^^^^^^^ CentralWorker::_monitorWorkers()");
@@ -84,6 +90,81 @@ void CentralWorker::_monitorWorkers() {
 void CentralWorker::registerWithMaster() {
     // &&& TODO: add a one shot DoList item to keep calling _registerWithMaster until we have our name.
     _registerWithMaster();
+}
+
+
+bool CentralWorker::workerInfoRecieve(BufferUdp::Ptr const&  data) {
+    LOGS(_log, LOG_LVL_INFO, " ******&&& workerInfoRecieve data=" << data->dump());
+    // Open the data protobuffer and add it to our list.
+    StringElement::Ptr sData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+    if (sData == nullptr) {
+        LOGS(_log, LOG_LVL_WARN, "CentralWorker::workerInfoRecieve Failed to parse list");
+        return false;
+    }
+    auto protoList = sData->protoParse<proto::WorkerListItem>();
+    if (protoList == nullptr) {
+        LOGS(_log, LOG_LVL_WARN, "CentralWorker::workerInfoRecieve Failed to parse list");
+        return false;
+    }
+
+    // &&& TODO move this to another thread
+    // Check the information, if it is our network address, set or check our name.
+    // Then compare it with the map, adding new/changed information.
+    /* &&&
+    protoAddr->set_workerip(workerItem->getAddress().ip);
+    protoAddr->set_workerport(workerItem->getAddress().port);
+    auto range = workerItem->getRangeString();
+    protoRange->set_valid(range.getValid());
+    protoRange->set_min(range.getMin());
+    protoRange->set_max(range.getMax());
+    protoRange->set_maxunlimited(range.getUnlimited());
+     */
+    uint32_t name = protoList->name();
+    std::string ip("");
+    int port = 0;
+    if (protoList->has_address()) {
+        proto::LdrNetAddress protoAddr = protoList->address();
+        ip = protoAddr.workerip();
+        port = protoAddr.workerport();
+    }
+    StringRange strRange;
+    if (protoList->has_rangestr()) {
+        proto::WorkerRangeString protoRange= protoList->rangestr();
+        bool valid        = protoRange.valid();
+        if (valid) {
+            std::string min   = protoRange.min();
+            std::string max   = protoRange.max();
+            bool unlimited = protoRange.maxunlimited();
+            strRange.setMinMax(min, max, unlimited);
+        }
+    }
+
+    // If the address matches ours, check the name.
+    if (getHostName() == ip && getPort() == port) {
+        if (isOurNameInvalid()) {
+            LOGS(_log, LOG_LVL_INFO, "Setting our name " << name);
+            setOurName(name);
+        } else if (getOurName() != name) {
+            LOGS(_log, LOG_LVL_ERROR, "Our name doesn't match address from master! name=" <<
+                                      getOurName() << " masterName=" << name);
+        }
+
+        // It is this worker. If there is a valid range in the message and our range is not valid,
+        // take the range given as our own. This should only ever happen with the all inclusive range.
+        // when this is the first worker being registered.
+        if (strRange.getValid()) {
+            std::lock_guard<std::mutex> lckM(_idMapMtx);
+            if (not _strRange.getValid()) {
+                LOGS(_log, LOG_LVL_INFO, "Setting our range " << strRange);
+                _strRange.setMinMax(strRange.getMin(), strRange.getMax(), strRange.getUnlimited());
+            }
+        }
+    }
+
+    // Make/update entry in map.
+    _wWorkerList->updateEntry(name, ip, port, strRange);
+
+    return true;
 }
 
 
@@ -124,6 +205,11 @@ void CentralMaster::addWorker(std::string const& ip, int port) {
         // _doList.addItem(item);  &&&
         item->addDoListItems(this);
     }
+}
+
+
+MWorkerListItem::Ptr CentralMaster::getWorkerNamed(uint32_t name) {
+    return _mWorkerList->getWorkerNamed(name);
 }
 
 

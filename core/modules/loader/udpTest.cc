@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
     LOGS(_log, LOG_LVL_INFO,  "host16=" << host16 << " hex=" << std::hex << host16);
     if (host16 != origin16) {
         LOGS(_log, LOG_LVL_ERROR, "UInt16NumElement did match host=" << host16 << " orig=" << origin16);
-        return -1;
+        exit(-1);
     } else {
         LOGS(_log, LOG_LVL_INFO, "UInt16NumElement match host=origin=" << host16);
     }
@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
     LOGS(_log, LOG_LVL_INFO,  "host32=" << host32 << " hex=" << std::hex << host32);
     if (host32 != origin32) {
         LOGS(_log, LOG_LVL_ERROR, "UInt32NumElement did match host=" << host32 << " orig=" << origin32);
-        return -1;
+        exit(-1);
     } else {
         LOGS(_log, LOG_LVL_INFO, "UInt32NumElement match host=origin=" << host32);
     }
@@ -114,7 +114,7 @@ int main(int argc, char* argv[]) {
         LOGS(_log, LOG_LVL_INFO, "data:" << data.dump());
     } catch (LoaderMsgErr& ex) {
         LOGS(_log, LOG_LVL_ERROR, "Write to buffer FAILED msg=" << ex.what());
-        return -1;
+        exit(-1);
     }
     LOGS(_log, LOG_LVL_INFO, "Done writing to buffer.");
 
@@ -139,14 +139,14 @@ int main(int argc, char* argv[]) {
             if (!MsgElement::equal(ele.get(), outEle.get())) {
                 LOGS(_log, LOG_LVL_ERROR,
                         "FAILED " << ele->getStringVal() << " != " << outEle->getStringVal());
-                return -1;
+                exit(-1);
             } else {
                 LOGS(_log, LOG_LVL_INFO, "matched " << ele->getStringVal());
             }
         }
     } catch (LoaderMsgErr& ex) {
         LOGS(_log, LOG_LVL_ERROR, "Read from buffer FAILED msg=" << ex.what());
-        return -1;
+        exit(-1);
     }
 
     //////////////////////////////////////////////////////////////////////////////
@@ -195,37 +195,23 @@ int main(int argc, char* argv[]) {
     int worker2Port = 10044;
     boost::asio::io_service ioServiceWorker2;
 
-    //MasterServer mastServ(ioServiceMaster, masterIP, masterPort, masterWorkerList); &&&
-    // std::thread mastT([&ioServiceMaster]() { ioServiceMaster.run(); }); &&&
-
     CentralMaster cMaster(ioServiceMaster, masterIP, masterPort);
+    // Need to start several threads so messages aren't dropped while being processed.
+    cMaster.run();
+    cMaster.run();
+    cMaster.run();
+    cMaster.run();
     cMaster.run();
 
     /// Start worker server 1
-    //WorkerServer worker1Serv(ioServiceWorker1, worker1IP, worker1Port, w1WorkerList); &&&
-    //std::thread worker1T([&ioServiceWorker1]() { ioServiceWorker1.run(); }); &&&
-    // &&& boost::asio::io_service& ioService, std::string const& masterHostName, int masterPort, std::string const& hostName, int port
     CentralWorker wCentral1(ioServiceWorker1, masterIP, masterPort, worker1IP, worker1Port);
     wCentral1.run();
 
 
     /// Start worker server 2
-    //WorkerServer worker2Serv(ioServiceWorker2, worker2IP, worker2Port, w2WorkerList); &&&
-    //std::thread worker2T([&ioServiceWorker2]() { ioServiceWorker2.run(); }); &&&
     CentralWorker wCentral2(ioServiceWorker2, masterIP, masterPort, worker2IP, worker2Port);
     wCentral2.run();
 
-    /* &&&
-    // create a client socket and register the workers.
-    boost::asio::io_context io_context;
-    udp::resolver resolver(io_context);
-    udp::endpoint masterEndpoint = *resolver.resolve(udp::v4(), masterIP, std::to_string(masterPort)).begin();
-
-    udp::socket socket(io_context);
-    socket.open(udp::v4());
-
-    uint64_t msgId = 1;
-    */
 
     /// Unknown message kind test. Pretending to be worker1.
     {
@@ -255,42 +241,27 @@ int main(int argc, char* argv[]) {
         std::cout << "&&&******1************************************** end" << std::endl;
     }
 
-    /// Have worker 1 request a the list of workers from the master.
-    {
-        /* &&&
-        wCentral1.monitorWorkers();
 
-        LoaderMsg msg(LoaderMsg::MAST_WORKER_LIST_REQ, ++msgId, "127.0.0.1", masterPort);
-        BufferUdp msgData;
-        msg.serializeToData(msgData);
-        // create the proto buffer
-        lsst::qserv::proto::LdrMastWorkerAddReq protoBuf;
-        protoBuf.set_workerip(worker2IP);
-        protoBuf.set_workerport(worker2Port);
-
-        StringElement addWorkerBuf;
-        protoBuf.SerializeToString(&(addWorkerBuf.element));
-        addWorkerBuf.appendToData(msgData);
-
-        // &&& change this to be sent from the worker2Serv port.
-        socket.send_to(boost::asio::buffer(msgData.begin(), msgData.getCurrentWriteLength()), masterEndpoint);
-
-        BufferUdp respBuf;
-        udp::endpoint senderEndpoint;
-        size_t len = socket.receive_from(boost::asio::buffer(respBuf.getBuffer(), respBuf.getMaxLength()), senderEndpoint);
-        respBuf.setWriteCursor(len);
-        std::cout << "******4 respBuf =" << respBuf.dump(true, true) << std::endl;
-        */
+    std::cout << "sleeping" << std::endl;
+    sleep(5); // TODO change to 20 second timeout with a check every 0.1 seconds.
+    // The workers should agree on the worker list, and it should have 2 elements.
+    if (wCentral1.getWorkerList()->getNameMapSize() == 0) {
+        LOGS(_log, LOG_LVL_ERROR, "ERROR Worker list is empty!!!");
+        exit(-1);
+    }
+    if (not wCentral1.getWorkerList()->equal(*(wCentral2.getWorkerList()))) {
+        LOGS(_log, LOG_LVL_ERROR, "ERROR Worker lists do not match!!!");
+        exit(-1);
+    } else {
+        LOGS(_log, LOG_LVL_INFO, "Worker lists match.");
     }
 
 
 
-
-    std::cout << "sleeping" << std::endl;
-    sleep(15);
     //ioService.stop(); // &&& this doesn't seem to work cleanly
     // mastT.join(); &&&
 
-
+    sleep(30);
     std::cout << "DONE" << std::endl;
+    exit(0);
 }

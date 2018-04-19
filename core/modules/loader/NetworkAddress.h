@@ -51,7 +51,11 @@ struct NetworkAddress {
     const int port; // Most of the workers will have the same port number.
 
     bool operator==(NetworkAddress const& other) const {
-        return(port == other.port && ip == other.ip);
+        return (port == other.port && ip == other.ip);
+    }
+
+    bool operator!=(NetworkAddress const& other) const {
+        return !(*this == other);
     }
 
     bool operator<(NetworkAddress const& other) const {

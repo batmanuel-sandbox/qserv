@@ -69,27 +69,42 @@ public:
 
     virtual ~WWorkerListItem() = default;
 
-    NetworkAddress getAddress() const { return _address; }
-    uint32_t getName() const { return _name; }
+    void setNetworkAddress(std::string const& ip, int port);
+    void setRangeStr(StringRange const& strRange);
+
+    NetworkAddress getAddress() const {
+        std::lock_guard<std::mutex> lck(_mtx);
+        return *_address;
+    }
+    uint32_t getName() const {
+        std::lock_guard<std::mutex> lck(_mtx);
+        return _name;
+    }
+    StringRange getRangeString() const {
+        std::lock_guard<std::mutex> lck(_mtx);
+        return _range;
+    }
 
     void addDoListItems(Central *central);
 
-    //util::CommandTracked::Ptr createCommand() override;
-    util::CommandTracked::Ptr createCommandWorker(CentralWorker* centralW);
-    util::CommandTracked::Ptr createCommandMaster(CentralMaster* centralM);
+    util::CommandTracked::Ptr createCommandWorkerInfoReq(CentralWorker* centralW);
+
+    bool equal(WWorkerListItem &other);
 
     friend std::ostream& operator<<(std::ostream& os, WWorkerListItem const& item);
 private:
     WWorkerListItem(uint32_t name, CentralWorker* central) : _name(name), _central(central) {}
     WWorkerListItem(uint32_t name, NetworkAddress const& address, CentralWorker* central)
-         : _name(name), _address(address), _central(central) {}
+         : _name(name), _address(new NetworkAddress(address)), _central(central) {}
 
     uint32_t _name;
-    NetworkAddress _address{"", 0}; ///< empty string indicates address is not valid.
-    TimeOut _lastContact{std::chrono::minutes(10)};  ///< Last time information was received from this worker
-    StringRange _range;  ///< min and max range for this worker.
+    NetworkAddress::UPtr _address{new NetworkAddress("",0)}; ///< empty string indicates address is not valid.
+    StringRange _range;      ///< min and max range for this worker.
+    mutable std::mutex _mtx; ///< protects _name, _address, _range
 
     CentralWorker* _central;
+
+    TimeOut _lastContact{std::chrono::minutes(10)};  ///< Last time information was received from this worker
 
     struct WorkerNeedsMasterData : public DoListItem {
         WorkerNeedsMasterData(WWorkerListItem::Ptr const& wWorkerListItem_, CentralWorker* central_) :
@@ -98,7 +113,6 @@ private:
         CentralWorker* central;
         util::CommandTracked::Ptr createCommand() override;
     };
-
     DoListItem::Ptr _workerUpdateNeedsMasterData;
 };
 
@@ -115,23 +129,29 @@ public:
 
     virtual ~WWorkerList() = default;
 
-    /* &&&
-    ///// Master only //////////////////////
-    // Returns pointer to new item if an item was created.
-    WWorkerListItem::Ptr addWorker(std::string const& ip, short port);
-
-    // Returns true of message could be parsed and a send will be attempted.
-    bool sendListTo(uint64_t msgId, std::string const& ip, short port,
-                    std::string const& outHostName, short ourPort);
-    */
-
     //// Worker only ////////////////////////
     // Receive a list of workers from the master.
     bool workerListReceive(BufferUdp::Ptr const& data);
 
+    bool equal(WWorkerList& other);
+
     util::CommandTracked::Ptr createCommand() override;
     util::CommandTracked::Ptr createCommandWorker(CentralWorker* centralW);
-    // util::CommandTracked::Ptr createCommandMaster(CentralMaster* centralM); &&&
+
+    ////////////////////////////////////////////
+    /// Nearly the same on Worker and Master
+    size_t getNameMapSize() {
+        std::lock_guard<std::mutex> lck(_mapMtx);
+        return _nameMap.size();
+    }
+    WWorkerListItem::Ptr getWorkerNamed(uint32_t name) {
+        std::lock_guard<std::mutex> lck(_mapMtx);
+        auto iter = _nameMap.find(name);
+        if (iter == _nameMap.end()) { return nullptr; }
+        return iter->second;
+    }
+
+    void updateEntry(uint32_t name, std::string const& ip, int port, StringRange& strRange);
 
 protected:
     void _flagListChange();

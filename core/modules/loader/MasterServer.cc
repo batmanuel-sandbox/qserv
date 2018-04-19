@@ -81,6 +81,7 @@ BufferUdp::Ptr MasterServer::parseMsg(BufferUdp::Ptr const& data,
             break;
         case LoaderMsg::MAST_WORKER_INFO_REQ:
             // TODO: Request information about a specific worker via MAST_WORKER_INFO
+            LOGS(_log, LOG_LVL_INFO, "&&& **** MasterServer:: MAST_WORKER_INFO_REQ");
             sendData = workerInfoRequest(inMsg, data, senderEndpoint);
             break;
         case LoaderMsg::MAST_WORKER_ADD_REQ:
@@ -195,27 +196,6 @@ BufferUdp::Ptr MasterServer::workerAddRequest(LoaderMsg const& inMsg, BufferUdp:
 
 BufferUdp::Ptr MasterServer::workerListRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
                                                boost::asio::ip::udp::endpoint const& senderEndpoint) {
-    /* &&&
-    LOGS(_log, LOG_LVL_INFO, "  &&& MasterServer::workerListRequest");
-
-    proto::LdrNetAddress addReq;
-
-    //MsgElement::Ptr p = MsgElement::retrieve(*data); &&&
-    StringElement::Ptr reqData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
-    if (reqData == nullptr) {
-        std::string errStr("STATUS_PARSE_ERR parse error in MasterServer::workerListRequest");
-        LOGS(_log, LOG_LVL_WARN, errStr);
-        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, errStr);
-    }
-
-    LOGS(_log, LOG_LVL_INFO, "MasterServer::workerListRequest from " << senderEndpoint << " len=" << reqData->element.length());
-    bool success = proto::ProtoImporter<proto::LdrNetAddress>::setMsgFrom(addReq, reqData->element.data(), reqData->element.length());
-    if (not success) {
-        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR,
-                                   "parse error in workerAddRequest");
-    }
-    */
-
     std::string funcName("MasterServer::workerListRequest");
     LOGS(_log, LOG_LVL_INFO, "  &&& " << funcName);
 
@@ -225,19 +205,6 @@ BufferUdp::Ptr MasterServer::workerListRequest(LoaderMsg const& inMsg, BufferUdp
         LOGS(_log, LOG_LVL_ERROR, errStr);
         return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, errStr);
     }
-
-    /* &&&
-    LOGS(_log, LOG_LVL_INFO, "***&&& workerListRequest calling sendListTo " << senderEndpoint);
-    // TODO: put this in a separate thread.
-    auto workerList = _centralMaster->getWorkerList();
-    workerList->sendListTo(inMsg.msgId->element, addReq.workerip(), addReq.workerport(),
-                           getOurHostName(), getOurPort());
-    LOGS(_log, LOG_LVL_INFO, "***&&& workerListRequest done sendListTo ");
-
-    // return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_SUCCESS, "ListReq"); &&&
-    return nullptr;
-    */
-
 
     LOGS(_log, LOG_LVL_INFO, "&&& workerListRequest calling sendListTo " << senderEndpoint);
     // TODO: put this in a separate thread.
@@ -252,23 +219,14 @@ BufferUdp::Ptr MasterServer::workerListRequest(LoaderMsg const& inMsg, BufferUdp
 BufferUdp::Ptr MasterServer::workerInfoRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
                                  boost::asio::ip::udp::endpoint const& senderEndpoint) {
     LOGS(_log, LOG_LVL_INFO, "  &&& MasterServer::workerInfoRequest **************");
-
+    // &&& TODO Wrap this up in a command and put it on a queue.
     try {
         std::string const funcName("MasterServer::workerInfoRequest");
-        NetworkAddress::UPtr nAddr = NetworkAddress::create(data, funcName);
-        if (nAddr == nullptr) {
+        NetworkAddress::UPtr requestorAddr = NetworkAddress::create(data, funcName);
+        if (requestorAddr == nullptr) {
             throw LoaderMsgErr(funcName, __FILE__, __LINE__);
         }
 
-        /* &&&
-        proto::WorkerListItem protoItem;
-        StringElement::Ptr itemData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
-        if (itemData == nullptr) {
-            throw LoaderMsgErr(funcName, __FILE__, __LINE__);
-        }
-        LOGS(_log, LOG_LVL_INFO, funcName << " from " << senderEndpoint << " len=" << itemData->element.length());
-        auto wName = itemData->protoParse<proto::WorkerListItem>();
-        */
         auto protoItem = StringElement::protoParse<proto::WorkerListItem>(data);
         if (protoItem == nullptr) {
             throw LoaderMsgErr(funcName, __FILE__, __LINE__);
@@ -278,8 +236,40 @@ BufferUdp::Ptr MasterServer::workerInfoRequest(LoaderMsg const& inMsg, BufferUdp
         LOGS(_log, LOG_LVL_INFO, "************************* &&& Master got name=" << workerName);
 
         /// &&& find the worker name in the map.
+        auto workerItem = _centralMaster->getWorkerNamed(protoItem->name());
+        if (workerItem == nullptr) {
+            /// &&& TODO construct message for invalid worker
+            return nullptr;
+        }
 
-        /// &&& return worker's name, netaddress, and range
+        /// &&& return worker's name, netaddress, and range in MAST_WORKER_INFO msg
+        proto::WorkerListItem protoWorker;
+        proto::LdrNetAddress* protoAddr = protoWorker.mutable_address();
+        proto::WorkerRangeString* protoRange = protoWorker.mutable_rangestr();
+        protoWorker.set_name(workerItem->getName());
+        protoAddr->set_workerip(workerItem->getAddress().ip);
+        protoAddr->set_workerport(workerItem->getAddress().port);
+        auto range = workerItem->getRangeString();
+        protoRange->set_valid(range.getValid());
+        protoRange->set_min(range.getMin());
+        protoRange->set_max(range.getMax());
+        protoRange->set_maxunlimited(range.getUnlimited());
+        StringElement seItem(protoWorker.SerializeAsString());
+
+        LoaderMsg masterWorkerInfoMsg(LoaderMsg::MAST_WORKER_INFO, _centralMaster->getNextMsgId(),
+                                      _centralMaster->getMasterHostName(), _centralMaster->getMasterPort());
+
+        BufferUdp sendBuf;
+        masterWorkerInfoMsg.serializeToData(sendBuf);
+        seItem.appendToData(sendBuf);
+
+        // Send the request to the worker that asked for it.
+        /* &&&
+        auto masterHost = _centralW->getMasterHostName();
+        auto masterPort = _centralW->getMasterPort();
+        _centralW->sendBufferTo(masterHost, masterPort, sendBuf);
+        */
+        _centralMaster->sendBufferTo(requestorAddr->ip, requestorAddr->port, sendBuf);
 
 
 

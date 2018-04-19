@@ -279,8 +279,12 @@ public:
 
 
 /// Base class for loader messages.
-/// These messages are meant to be short and simple UDP messages. Long messages
-/// may have difficulty being transmitted successfully.
+//  These messages are meant to be short and simple UDP messages. Long messages
+//  may have difficulty being transmitted successfully.
+//
+//  The message contains the message kind and the address of the entity sending
+//  the message.
+//
 class LoaderMsg {
 public:
     enum {
@@ -303,6 +307,7 @@ public:
     };
 
     LoaderMsg() = default;
+    /// Contains the address of entity sending the message.
     LoaderMsg(uint16_t kind, uint64_t id, std::string const& host, uint32_t port);
     LoaderMsg(LoaderMsg const&) = delete;
     LoaderMsg& operator=(LoaderMsg const&) = delete;

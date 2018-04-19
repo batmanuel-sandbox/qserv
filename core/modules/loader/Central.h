@@ -83,6 +83,9 @@ public:
         return _doList.addItem(item);
     }
 
+
+    virtual std::string getOurLogId() { return "baseclass"; }
+
 protected:
     /// Repeatedly check the items on the _doList.
     void _checkDoList();
@@ -130,18 +133,52 @@ public:
 
     void registerWithMaster();
 
+    bool workerInfoRecieve(BufferUdp::Ptr const&  data);
+
+    bool isOurNameInvalid() const {
+        std::lock_guard<std::mutex> lck(_ourNameMtx);
+        return _ourNameInvalid;
+    }
+
+    bool setOurName(uint32_t name) {
+        std::lock_guard<std::mutex> lck(_ourNameMtx);
+        if (_ourNameInvalid) {
+            _ourName = name;
+            _ourNameInvalid = false;
+            return true;
+        } else {
+            /// &&& add error message, check if _ourname matches name
+            return false;
+        }
+    }
+
+    uint32_t getOurName() const {
+        std::lock_guard<std::mutex> lck(_ourNameMtx);
+        return _ourName;
+    }
+
+    /// &&& TODO this is only needed for initial testing and should be deleted.
+    std::string getOurLogId() override;
+
     void testSendBadMessage();
 
 private:
     void _registerWithMaster();
     void _monitorWorkers();
 
+    /// &&& the following probably need mutex protection.
     const std::string _hostName;
     const int         _port;
     WWorkerList::Ptr _wWorkerList{new WWorkerList(this)};
 
+    bool _ourNameInvalid{true}; ///< true until the name has been set by the master.
+    uint32_t _ourName; ///< name given to us by the master
+    mutable std::mutex _ourNameMtx; ///< protects _ourNameInvalid, _ourName
+
     // TODO _range both int and string;
+    StringRange _strRange;
     // TODO _directorIdMap
+    std::mutex _idMapMtx; ///< protect _rangeStr and _directorIdMap
 };
 
 
@@ -157,8 +194,11 @@ public:
     ~CentralMaster() override { _mWorkerList.reset(); }
 
     void addWorker(std::string const& ip, int port);
+    MWorkerListItem::Ptr getWorkerNamed(uint32_t name);
 
     MWorkerList::Ptr getWorkerList() const { return _mWorkerList; }
+
+    std::string getOurLogId() override { return "master"; }
 
 private:
     MWorkerList::Ptr _mWorkerList{new MWorkerList(this)};

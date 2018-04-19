@@ -21,38 +21,33 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  */
 
-#if 0 // &&&
 
 // Class header
-#include "loader/WorkerList.h"
+#include "loader/StringRange.h"
 
 // System headers
-#include <boost/asio.hpp>
 #include <iostream>
 
 // Third-party headers
-
-
-// qserv headers
-#include "loader/Central.h"
-#include "loader/LoaderMsg.h"
-#include "proto/ProtoImporter.h"
-#include "proto/loader.pb.h"
-
 
 // LSST headers
 #include "lsst/log/Log.h"
 
 namespace {
-LOG_LOGGER _log = LOG_GET("lsst.qserv.loader.WorkerList");
+LOG_LOGGER _log = LOG_GET("lsst.qserv.loader.StringRange");
 }
 
 namespace lsst {
 namespace qserv {
 namespace loader {
 
+std::ostream& operator<<(std::ostream& os, StringRange const& strRange) {
+    os << "valid=" << strRange._valid
+       << " min=" << strRange._min
+       << " max=" << strRange._max
+       << " unlimited=" << strRange._unlimited;
+    return os;
+}
 
 }}} // namespace lsst::qserv::loader
 
-
-#endif // &&&

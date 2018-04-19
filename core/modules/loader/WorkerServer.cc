@@ -64,11 +64,13 @@ BufferUdp::Ptr WorkerServer::parseMsg(BufferUdp::Ptr const& data,
         _centralWorker->getWorkerList()->workerListReceive(data);
         break;
     case LoaderMsg::MSG_RECEIVED:
-        LOGS(_log, LOG_LVL_WARN, "&&&********* WorkerServer::parseMsg MSG_RECEIVED");
+        LOGS(_log, LOG_LVL_WARN, "&&& WorkerServer::parseMsg MSG_RECEIVED");
         _msgRecieved(inMsg, data, senderEndpoint);
         sendData.reset(); // never send a response back for one of these, infinite loop.
         break;
     case LoaderMsg::MAST_WORKER_INFO:
+        _centralWorker->workerInfoRecieve(data);
+        break;
     case LoaderMsg::WORKER_INSERT_KEY_REQ:
     case LoaderMsg::KEY_INFO_REQ:
     case LoaderMsg::KEY_INFO:

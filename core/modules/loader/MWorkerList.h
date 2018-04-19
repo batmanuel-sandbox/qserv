@@ -70,6 +70,7 @@ public:
 
     NetworkAddress getAddress() const { return _address; }
     uint32_t getName() const { return _name; }
+    StringRange getRangeString() const { return _range; }
 
     void addDoListItems(Central *central);
 
@@ -128,6 +129,20 @@ public:
     util::CommandTracked::Ptr createCommand() override;
     // util::CommandTracked::Ptr createCommandWorker(CentralWorker* centralW); &&&
     util::CommandTracked::Ptr createCommandMaster(CentralMaster* centralM);
+
+    //////////////////////////////////////////
+    /// Nearly the same on Worker and Master
+    size_t getNameMapSize() {
+        std::lock_guard<std::mutex> lck(_mapMtx);
+        return _nameMap.size();
+    }
+
+    MWorkerListItem::Ptr getWorkerNamed(uint32_t name) {
+        std::lock_guard<std::mutex> lck(_mapMtx);
+        auto iter = _nameMap.find(name);
+        if (iter == _nameMap.end()) { return nullptr; }
+        return iter->second;
+    }
 
 protected:
     void _flagListChange();

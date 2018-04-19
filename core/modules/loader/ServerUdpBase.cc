@@ -133,6 +133,7 @@ void ServerUdpBase::_sendCallback(const boost::system::error_code& error, size_t
 }
 
 void ServerUdpBase::_receivePrepare() {
+    LOGS(_log, LOG_LVL_INFO, "&&& _receivePrepare this=" << this);
     _data = std::make_shared<BufferUdp>(); // new buffer for next response
     _socket.async_receive_from(boost::asio::buffer(_data->getBuffer(), _data->getMaxLength()), _senderEndpoint,
                                    boost::bind(&ServerUdpBase::_receiveCallback, this,
