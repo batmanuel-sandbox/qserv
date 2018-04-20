@@ -31,6 +31,7 @@
 #include <boost/asio.hpp>
 
 // Qserv headers
+#include "loader/LoaderMsg.h"
 #include "loader/ServerUdpBase.h"
 
 
@@ -42,8 +43,8 @@ class CentralClient;
 
 class ClientServer : public ServerUdpBase {
 public:
-    ClientServer(boost::asio::io_service& ioService, std::string const& host, int port, CentralWorker* centralWorker)
-        : ServerUdpBase(ioService, host, port), _centralWorker(centralWorker) {}
+    ClientServer(boost::asio::io_service& ioService, std::string const& host, int port, CentralClient* centralClient)
+        : ServerUdpBase(ioService, host, port), _centralClient(centralClient) {}
 
     ClientServer() = delete;
 
@@ -61,10 +62,10 @@ private:
                       boost::asio::ip::udp::endpoint const& senderEndpoint);
 
 
-    CentralWorker* _centralWorker;
+    CentralClient* _centralClient;
 };
 
 
 }}} // namespace lsst::qserv::loader
 
-#endif // LSST_QSERV_LOADER_WORKERSERVER_H_
+#endif // LSST_QSERV_LOADER_ClientSERVER_H_
