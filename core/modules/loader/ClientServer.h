@@ -21,8 +21,8 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  *
  */
-#ifndef LSST_QSERV_LOADER_WORKERSERVER_H_
-#define LSST_QSERV_LOADER_WORKERSERVER_H_
+#ifndef LSST_QSERV_LOADER_CLIENTSERVER_H_
+#define LSST_QSERV_LOADER_CLIENTSERVER_H_
 
 // system headers
 #include <cstdlib>
@@ -32,22 +32,22 @@
 
 // Qserv headers
 #include "loader/ServerUdpBase.h"
-#include "loader/WWorkerList.h"
+
 
 namespace lsst {
 namespace qserv {
 namespace loader {
 
-class CentralWorker;
+class CentralClient;
 
-class WorkerServer : public ServerUdpBase {
+class ClientServer : public ServerUdpBase {
 public:
-    WorkerServer(boost::asio::io_service& ioService, std::string const& host, int port, CentralWorker* centralWorker)
+    ClientServer(boost::asio::io_service& ioService, std::string const& host, int port, CentralWorker* centralWorker)
         : ServerUdpBase(ioService, host, port), _centralWorker(centralWorker) {}
 
-    WorkerServer() = delete;
+    ClientServer() = delete;
 
-    ~WorkerServer() override = default;
+    ~ClientServer() override = default;
 
     BufferUdp::Ptr parseMsg(BufferUdp::Ptr const& data,
                             boost::asio::ip::udp::endpoint const& endpoint) override;
