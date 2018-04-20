@@ -189,10 +189,28 @@ bool WWorkerList::equal(WWorkerList& other) {
 }
 
 
+std::string WWorkerList::dump() const {
+    std::stringstream os;
+    os << "WWorkerList name:\n";
+    {
+        std::lock_guard<std::mutex> lck(_mapMtx);
+        for (auto elem:_nameMap) {
+            os << "  " << *elem.second << "\n";
+        }
+
+        os << "WWorkerList ip:\n";
+        for (auto elem:_ipMap) {
+            os << "  " << *elem.second << "\n";
+        }
+    }
+    return os.str();
+}
+
+
 /// There must be a name. However, ip, port, and range may be invalid.
 //  TODO believe our neighbors range over the master
 void WWorkerList::updateEntry(uint32_t name, std::string const& ip, int port, StringRange& strRange) {
-    std::lock_guard<std::mutex> lk(_mapMtx);
+    std::unique_lock<std::mutex> lk(_mapMtx);
     auto iter = _nameMap.find(name);
     if (iter == _nameMap.end()) {
         // This should rarely happen, make an entry for it
@@ -212,8 +230,10 @@ void WWorkerList::updateEntry(uint32_t name, std::string const& ip, int port, St
                                      " res=" << res.second);
         }
     }
+    lk.unlock();
 
     // TODO maybe special action should be taken if this is our name.
+    LOGS(_log, LOG_LVL_INFO, "&&&& updateEntry strRange=" << strRange);
     if (strRange.getValid()) {
         item->setRangeStr(strRange);
         LOGS(_log, LOG_LVL_INFO, "updateEntry set name=" << name << " range=" << strRange);
@@ -325,7 +345,7 @@ util::CommandTracked::Ptr WWorkerListItem::createCommandWorkerInfoReq(CentralWor
 
 
 std::ostream& operator<<(std::ostream& os, WWorkerListItem const& item) {
-    os << "name=" << item._name << " address=" << *(item._address);
+    os << "name=" << item._name << " address=" << *(item._address) << " range(" << item._range << ")";
     return os;
 }
 

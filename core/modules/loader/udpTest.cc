@@ -249,11 +249,14 @@ int main(int argc, char* argv[]) {
         LOGS(_log, LOG_LVL_ERROR, "ERROR Worker list is empty!!!");
         exit(-1);
     }
+    LOGS(_log, LOG_LVL_INFO, "MasterList " << cMaster.getWorkerList()->dump());
+    LOGS(_log, LOG_LVL_INFO, "List1 " << wCentral1.getWorkerList()->dump());
+    LOGS(_log, LOG_LVL_INFO, "List2 " << wCentral2.getWorkerList()->dump());
     if (not wCentral1.getWorkerList()->equal(*(wCentral2.getWorkerList()))) {
         LOGS(_log, LOG_LVL_ERROR, "ERROR Worker lists do not match!!!");
         exit(-1);
     } else {
-        LOGS(_log, LOG_LVL_INFO, "Worker lists match.");
+        LOGS(_log, LOG_LVL_INFO, "Worker lists match!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     }
 
 

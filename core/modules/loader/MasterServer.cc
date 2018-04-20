@@ -147,37 +147,6 @@ BufferUdp::Ptr MasterServer::replyMsgReceived(boost::asio::ip::udp::endpoint con
 BufferUdp::Ptr MasterServer::workerAddRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
                                               boost::asio::ip::udp::endpoint const& senderEndpoint) {
 
-    /* &&&
-    proto::LdrNetAddress addReq; // &&& rename addReq
-
-    //MsgElement::Ptr p = MsgElement::retrieve(*data); &&&
-    StringElement::Ptr addrData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
-    if (addrData == nullptr) {
-        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR,
-                                   "workerAddRequest protobuf string retrieve failed");
-    }
-
-
-    LOGS(_log, LOG_LVL_INFO, "MasterServer::workerAddRequest from " << senderEndpoint << " len=" << addrData->element.length());
-    bool success = proto::ProtoImporter<proto::LdrNetAddress>::setMsgFrom(addReq, addrData->element.data(), addrData->element.length());
-    if (not success) {
-        std::string errStr("STATUS_PARSE_ERR parse error in MasterServer::workerAddRequest");
-        LOGS(_log, LOG_LVL_WARN, errStr);
-        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, errStr);
-    }
-
-
-    // TODO: This should be on separate thread &&&
-    _centralMaster->addWorker(addReq.workerip(), addReq.workerport());
-    // _workerList->addWorker(addReq.workerip(), addReq.workerport()); &&&
-
-
-    LOGS(_log, LOG_LVL_INFO, "Adding worker ip=" << addReq.workerip() << " port=" << addReq.workerport());
-
-    // return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_SUCCESS, "AddReq"); &&&
-    return nullptr;
-    */
-
     /// Message contains the network address of a worker to add to our list.
     auto addReq = NetworkAddress::create(data, "MasterServer::workerAddRequest");
     if (addReq == nullptr) {
@@ -250,6 +219,7 @@ BufferUdp::Ptr MasterServer::workerInfoRequest(LoaderMsg const& inMsg, BufferUdp
         protoAddr->set_workerip(workerItem->getAddress().ip);
         protoAddr->set_workerport(workerItem->getAddress().port);
         auto range = workerItem->getRangeString();
+        LOGS(_log, LOG_LVL_INFO, "&&&&&&&&&&&&&&&&&&&&&& workerInfoRequest range = " << range);
         protoRange->set_valid(range.getValid());
         protoRange->set_min(range.getMin());
         protoRange->set_max(range.getMax());

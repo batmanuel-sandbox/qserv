@@ -68,11 +68,23 @@ public:
 
     virtual ~MWorkerListItem() = default;
 
-    NetworkAddress getAddress() const { return _address; }
-    uint32_t getName() const { return _name; }
-    StringRange getRangeString() const { return _range; }
+    NetworkAddress getAddress() const {
+        std::lock_guard<std::mutex> lck(_mtx);
+        return *_address;
+    }
+    uint32_t getName() const {
+        std::lock_guard<std::mutex> lck(_mtx);
+        return _name;
+    }
+    StringRange getRangeString() const {
+        std::lock_guard<std::mutex> lck(_mtx);
+        return _range;
+    }
 
     void addDoListItems(Central *central);
+
+    void setRangeStr(StringRange const& strRange);
+    void setAllInclusiveRange();
 
     void flagNeedToSendList();
 
@@ -84,12 +96,13 @@ public:
 private:
     MWorkerListItem(uint32_t name, CentralMaster* central) : _name(name), _central(central) {}
     MWorkerListItem(uint32_t name, NetworkAddress const& address, CentralMaster* central)
-         : _name(name), _address(address), _central(central) {}
+         : _name(name), _address(new NetworkAddress(address)), _central(central) {}
 
     uint32_t _name;
-    NetworkAddress _address{"", 0}; ///< empty string indicates address is not valid.
+    NetworkAddress::UPtr _address{new NetworkAddress("", 0)}; ///< empty string indicates address is not valid.
     TimeOut _lastContact{std::chrono::minutes(10)};  ///< Last time information was received from this worker
     StringRange _range;  ///< min and max range for this worker.
+    mutable std::mutex _mtx; ///< protects _name, _address, _range
 
     CentralMaster* _central;
 
@@ -120,7 +133,7 @@ public:
 
     ///// Master only //////////////////////
     // Returns pointer to new item if an item was created.
-    MWorkerListItem::Ptr addWorker(std::string const& ip, short port);
+    MWorkerListItem::Ptr addWorker(std::string const& ip, int port);
 
     // Returns true of message could be parsed and a send will be attempted.
     bool sendListTo(uint64_t msgId, std::string const& ip, short port,
@@ -144,6 +157,8 @@ public:
         return iter->second;
     }
 
+    std::string dump() const;
+
 protected:
     void _flagListChange();
 
@@ -153,7 +168,7 @@ protected:
     bool _wListChanged{false}; ///< true if the list has changed
     BufferUdp::Ptr _stateListData; ///< message
     uint32_t _totalNumberOfWorkers{0}; ///< total number of workers according to the master.
-    std::mutex _mapMtx; ///< protects _nameMap, _ipMap, _wListChanged
+    mutable std::mutex _mapMtx; ///< protects _nameMap, _ipMap, _wListChanged
 
     std::atomic<uint32_t> _sequence{1};
 

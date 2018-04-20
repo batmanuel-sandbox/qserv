@@ -47,7 +47,7 @@ public:
     using Ptr = std::shared_ptr<BufferUdp>;
 
     BufferUdp() : BufferUdp(MAX_MSG_SIZE) {
-        std::cout << "&&& bufferUdp " << dump() << std::endl;
+        // std::cout << "&&& bufferUdp " << dump() << std::endl;
     }
 
     explicit BufferUdp(size_t length) : _length(length) {

@@ -21,7 +21,7 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  *
  */
-#if 0 // &&&
+#if 0 // &&& Really must make this base class for MWorkerList, WWorkerList,  MWorkerListItem, and  WWorkerListItem
 #ifndef LSST_QSERV_LOADER_WORKERLIST_H_
 #define LSST_QSERV_LOADER_WORKERLIST_H_
 

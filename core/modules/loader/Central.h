@@ -195,6 +195,7 @@ public:
 
     void addWorker(std::string const& ip, int port);
     MWorkerListItem::Ptr getWorkerNamed(uint32_t name);
+    void setRangeUnlimited();
 
     MWorkerList::Ptr getWorkerList() const { return _mWorkerList; }
 
@@ -202,6 +203,9 @@ public:
 
 private:
     MWorkerList::Ptr _mWorkerList{new MWorkerList(this)};
+
+    std::atomic<bool> _firstWorkerRegistered{false};
+    // std::mutex _firstWorkerRegisteredMtx; &&&
 };
 
 }}} // namespace lsst::qserv::loader

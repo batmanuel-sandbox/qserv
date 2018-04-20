@@ -100,7 +100,7 @@ private:
     uint32_t _name;
     NetworkAddress::UPtr _address{new NetworkAddress("",0)}; ///< empty string indicates address is not valid.
     StringRange _range;      ///< min and max range for this worker.
-    mutable std::mutex _mtx; ///< protects _name, _address, _range
+    mutable std::mutex _mtx; ///< protects _name, _address, _range, _workerUpdateNeedsMasterData
 
     CentralWorker* _central;
 
@@ -153,6 +153,8 @@ public:
 
     void updateEntry(uint32_t name, std::string const& ip, int port, StringRange& strRange);
 
+    std::string dump() const;
+
 protected:
     void _flagListChange();
 
@@ -162,7 +164,7 @@ protected:
     bool _wListChanged{false}; ///< true if the list has changed
     BufferUdp::Ptr _stateListData; ///< message
     uint32_t _totalNumberOfWorkers{0}; ///< total number of workers according to the master.
-    std::mutex _mapMtx; ///< protects _nameMap, _ipMap, _wListChanged
+    mutable std::mutex _mapMtx; ///< protects _nameMap, _ipMap, _wListChanged
 
     std::atomic<uint32_t> _sequence{1};
 };

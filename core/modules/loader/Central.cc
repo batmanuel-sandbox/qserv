@@ -54,7 +54,6 @@ Central::~Central() {
     for (std::thread& thd : _ioServiceThreads) {
         thd.join();
     }
-    //_workerList.reset(); &&&
 }
 
 
@@ -82,7 +81,7 @@ std::string CentralWorker::getOurLogId() {
 
 void CentralWorker::_monitorWorkers() {
     // Add _workerList to _doList so it starts checking new entries.
-    LOGS(_log, LOG_LVL_INFO, "&&& ^^^^^^^^^^^^^^^^^^^^^^ CentralWorker::_monitorWorkers()");
+    // LOGS(_log, LOG_LVL_INFO, "&&& CentralWorker::_monitorWorkers()");
     _doList.addItem(_wWorkerList);
 }
 
@@ -94,7 +93,7 @@ void CentralWorker::registerWithMaster() {
 
 
 bool CentralWorker::workerInfoRecieve(BufferUdp::Ptr const&  data) {
-    LOGS(_log, LOG_LVL_INFO, " ******&&& workerInfoRecieve data=" << data->dump());
+    // LOGS(_log, LOG_LVL_INFO, " ******&&& workerInfoRecieve data=" << data->dump());
     // Open the data protobuffer and add it to our list.
     StringElement::Ptr sData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
     if (sData == nullptr) {
@@ -110,15 +109,6 @@ bool CentralWorker::workerInfoRecieve(BufferUdp::Ptr const&  data) {
     // &&& TODO move this to another thread
     // Check the information, if it is our network address, set or check our name.
     // Then compare it with the map, adding new/changed information.
-    /* &&&
-    protoAddr->set_workerip(workerItem->getAddress().ip);
-    protoAddr->set_workerport(workerItem->getAddress().port);
-    auto range = workerItem->getRangeString();
-    protoRange->set_valid(range.getValid());
-    protoRange->set_min(range.getMin());
-    protoRange->set_max(range.getMax());
-    protoRange->set_maxunlimited(range.getUnlimited());
-     */
     uint32_t name = protoList->name();
     std::string ip("");
     int port = 0;
@@ -136,6 +126,7 @@ bool CentralWorker::workerInfoRecieve(BufferUdp::Ptr const&  data) {
             std::string max   = protoRange.max();
             bool unlimited = protoRange.maxunlimited();
             strRange.setMinMax(min, max, unlimited);
+            //LOGS(_log, LOG_LVL_WARN, "&&& CentralWorker::workerInfoRecieve range=" << strRange);
         }
     }
 
@@ -199,11 +190,20 @@ void CentralWorker::testSendBadMessage() {
 
 
 void CentralMaster::addWorker(std::string const& ip, int port) {
-    LOGS(_log, LOG_LVL_INFO, "&&& Master::addWorker");
+    // LOGS(_log, LOG_LVL_INFO, "&&& Master::addWorker");
     auto item = _mWorkerList->addWorker(ip, port);
+
     if (item != nullptr) {
-        // _doList.addItem(item);  &&&
+        // If that was the first worker added, it gets unlimited range.
+        if (_firstWorkerRegistered.exchange(true) == false) {
+            LOGS(_log, LOG_LVL_INFO, "setAllInclusiveRange for name=" << item->getName());
+            item->setAllInclusiveRange();
+        }
+
+        // TODO &&& maybe flag worker as active somehow ???
+
         item->addDoListItems(this);
+        LOGS(_log, LOG_LVL_INFO, "Master::addWorker " << *item);
     }
 }
 

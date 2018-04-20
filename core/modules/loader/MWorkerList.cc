@@ -71,7 +71,7 @@ util::CommandTracked::Ptr MWorkerList::createCommandMaster(CentralMaster* centra
 
 
 // Returns pointer to new item when new worker added, otherwise nullptr.
-MWorkerListItem::Ptr MWorkerList::addWorker(std::string const& ip, short port) {
+MWorkerListItem::Ptr MWorkerList::addWorker(std::string const& ip, int port) {
     NetworkAddress address(ip, port);
 
     // If it is already in the map, do not change its name.
@@ -158,15 +158,31 @@ void MWorkerList::_flagListChange() {
 }
 
 
+std::string MWorkerList::dump() const {
+    std::stringstream os;
+    os << "MWorkerList:\n";
+    {
+        std::lock_guard<std::mutex> lck(_mapMtx);
+        for (auto elem:_nameMap) {
+            os << "  " << *elem.second << "\n";
+        }
+        os << "MWorkerList ip:\n";
+        for (auto elem:_ipMap) {
+            os << "  " << *elem.second << "\n";
+        }
+    }
+    return os.str();
+}
+
+
 void MWorkerListItem::addDoListItems(Central *central) {
-    LOGS(_log, LOG_LVL_INFO, "&&& MWorkerListItem::addDoListItems  a^^^^^^^^^^^^^^^^^^^");
+    LOGS(_log, LOG_LVL_INFO, "&&& MWorkerListItem::addDoListItems a");
     std::lock_guard<std::mutex> lck(_doListItemsMtx);
     if (_sendListToWorker == nullptr) {
-        LOGS(_log, LOG_LVL_INFO, "&&& MWorkerListItem::addDoListItems  b^^^^^^^^^^^^^^^^^^^");
+        LOGS(_log, LOG_LVL_INFO, "&&& MWorkerListItem::addDoListItems b");
         _sendListToWorker = std::make_shared<SendListToWorker>(shared_from_this(), _central);
         _central->addDoListItem(_sendListToWorker);
     }
-    LOGS(_log, LOG_LVL_INFO, "&&& MWorkerListItem::addDoListItems  c^^^^^^^^^^^^^^^^^^^");
 }
 
 
@@ -187,8 +203,22 @@ void MWorkerListItem::sendListToWorkerInfoReceived() {
 }
 
 
+void MWorkerListItem::setRangeStr(StringRange const& strRange) {
+    std::lock_guard<std::mutex> lck(_mtx);
+    _range = strRange;
+}
+
+
+void MWorkerListItem::setAllInclusiveRange() {
+    LOGS(_log, LOG_LVL_INFO, "&&& MWorkerListItem::setAllInclusiveRange for name=" << _name);
+    std::lock_guard<std::mutex> lck(_mtx);
+    _range.setAllInclusiveRange();
+    LOGS(_log, LOG_LVL_INFO, "&&& MWorkerListItem::setAllInclusiveRange " << _range);
+}
+
+
 std::ostream& operator<<(std::ostream& os, MWorkerListItem const& item) {
-    os << "name=" << item._name << " address=" << item._address;
+    os << "name=" << item._name << " address=" << *item._address << " range(" << item._range << ")";
     return os;
 }
 
@@ -205,7 +235,7 @@ util::CommandTracked::Ptr MWorkerListItem::SendListToWorker::createCommand() {
         void action(util::CmdData*) override {
             LOGS(_log, LOG_LVL_INFO, "&&& SendListToWorkerCmd::action");
             centM->getWorkerList()->sendListTo(centM->getNextMsgId(),
-                    tItem->_address.ip, tItem->_address.port,
+                    tItem->_address->ip, tItem->_address->port,
                     centM->getMasterHostName(), centM->getMasterPort());
         }
         CentralMaster *centM;
@@ -214,6 +244,7 @@ util::CommandTracked::Ptr MWorkerListItem::SendListToWorker::createCommand() {
     LOGS(_log, LOG_LVL_INFO, "&&& SendListToWorker::createCommand");
     return std::make_shared<SendListToWorkerCmd>(central, item);
 }
+
 
 }}} // namespace lsst::qserv::loader
 

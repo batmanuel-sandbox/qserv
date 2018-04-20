@@ -76,15 +76,17 @@ public:
     }
 
     bool setMinMax(std::string const& vMin, std::string const& vMax, bool unlimited=false) {
+        if (!unlimited && vMin > vMax) {
+            return false;
+        }
         if (unlimited) {
             _unlimited = true;
             _min = vMin;
-            _max = (vMax > _min) ? vMax : _min;
-            return true;
+            _max = std::max(vMax, _min); // max is irrelevant at this point
+        } else {
+            _min = vMin;
+            _max = vMax;
         }
-        if (vMin > vMax) { return false; }
-        _min = vMin;
-        _max = vMax;
         setValid();
         return true;
     }
@@ -112,6 +114,7 @@ public:
     bool getUnlimited() const { return _unlimited; }
     std::string getMin() const { return _min; }
     std::string getMax() const { return _max; }
+
 
     friend std::ostream& operator<<(std::ostream&, StringRange const&);
 

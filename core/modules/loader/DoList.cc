@@ -53,9 +53,7 @@ void DoList::checkList() {
     {
         std::lock_guard<std::mutex> lockAddList(_addListMtx);
         // Move all the items in _addList to _list. _addList is emptied
-        LOGS(_log, LOG_LVL_INFO, " &&& a _list len=" << _list.size() << " add len=" << _addList.size());
         _list.splice(_list.end(), _addList);
-        LOGS(_log, LOG_LVL_INFO, " &&& b _list len=" << _list.size() << " add len=" << _addList.size());
     }
     for (auto iter = _list.begin(); iter != _list.end(); ++iter){
         LOGS(_log, LOG_LVL_INFO, "  &&& checking item");
