@@ -157,7 +157,6 @@ bool WWorkerList::workerListReceive(BufferUdp::Ptr const& data) {
 // must lock _mapMtx before calling this function
 void WWorkerList::_flagListChange() {
     _wListChanged = true;
-
 }
 
 
@@ -230,15 +229,44 @@ void WWorkerList::updateEntry(uint32_t name, std::string const& ip, int port, St
                                      " res=" << res.second);
         }
     }
-    lk.unlock();
 
     // TODO maybe special action should be taken if this is our name.
     LOGS(_log, LOG_LVL_INFO, "&&&& updateEntry strRange=" << strRange);
     if (strRange.getValid()) {
-        item->setRangeStr(strRange);
+        // Does the new range match the old range?
+        auto oldRange = item->setRangeStr(strRange);
         LOGS(_log, LOG_LVL_INFO, "updateEntry set name=" << name << " range=" << strRange);
+        if (not oldRange.equal(strRange)) {
+            // Since the value changed, it needs to be removed and reinserted.
+            // No invalid ranges should be in the map.
+            if (oldRange.getValid()) {
+                // The old value was valid, so it is likely in the map.
+                auto rangeIter = _rangeMap.find(oldRange);
+                if (rangeIter != _rangeMap.end()) {
+                    _rangeMap.erase(rangeIter);
+                }
+            }
+            if (strRange.getValid()) {
+                _rangeMap[strRange] = item;
+
+            }
+        }
     }
 }
+
+
+WWorkerListItem::Ptr WWorkerList::findWorkerForKey(std::string const& key) {
+    std::unique_lock<std::mutex> lk(_mapMtx);
+    // TODO Really could use a custom container for _rangeMap to speed this up.
+    for (auto const& elem : _rangeMap) {
+        if (elem.second->containsKey(key)) {
+            return elem.second;
+        }
+    }
+    LOGS(_log, LOG_LVL_ERROR, "WWorkerList::findWorkerForKey did not find worker for key=" << key);
+    return nullptr;
+}
+
 
 
 void WWorkerListItem::addDoListItems(Central *central) {
@@ -280,10 +308,23 @@ void WWorkerListItem::setNetworkAddress(std::string const& ip, int port) {
 }
 
 
-void WWorkerListItem::setRangeStr(StringRange const& strRange) {
+StringRange WWorkerListItem::setRangeStr(StringRange const& strRange) {
     std::lock_guard<std::mutex> lck(_mtx);
+    /* &&&
+    if (strRange.equal(_range)) { return true; }
     _range = strRange;
     LOGS(_log, LOG_LVL_INFO, "setRangeStr name=" << _name << " range=" << _range);
+    return false;
+    */
+    auto oldRange = _range;
+    LOGS(_log, LOG_LVL_INFO, "setRangeStr name=" << _name << " range=" << _range <<
+                             " oldRange=" << oldRange);
+    return oldRange;
+}
+
+StringRange WWorkerListItem::getRange() const {
+    std::lock_guard<std::mutex> lck(_mtx);
+    return _range;
 }
 
 
@@ -341,6 +382,11 @@ util::CommandTracked::Ptr WWorkerListItem::createCommandWorkerInfoReq(CentralWor
 
     LOGS(_log, LOG_LVL_INFO, "&&& WWorkerListItem::createCommandWorker this=" << centralW->getOurLogId() << " name=" << _name);
     return std::make_shared<WorkerReqCmd>(centralW, _name);
+}
+
+bool WWorkerListItem::containsKey(std::string const& key) const {
+    std::lock_guard<std::mutex> lck(_mtx);
+    return _range.isInRange(key);
 }
 
 

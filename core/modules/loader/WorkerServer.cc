@@ -69,9 +69,11 @@ BufferUdp::Ptr WorkerServer::parseMsg(BufferUdp::Ptr const& data,
         sendData.reset(); // never send a response back for one of these, infinite loop.
         break;
     case LoaderMsg::MAST_WORKER_INFO:
-        _centralWorker->workerInfoRecieve(data);
+        _centralWorker->workerInfoReceive(data);
         break;
-    case LoaderMsg::WORKER_INSERT_KEY_REQ:
+    case LoaderMsg::KEY_INSERT_REQ:
+        _centralWorker->workerKeyInsertReq(inMsg, data);
+        break;
     case LoaderMsg::KEY_INFO_REQ:
     case LoaderMsg::KEY_INFO:
         LOGS(_log, LOG_LVL_ERROR, "&&& need to add handler for " << inMsg.msgKind->element);

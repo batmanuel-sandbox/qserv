@@ -195,6 +195,10 @@ int main(int argc, char* argv[]) {
     int worker2Port = 10044;
     boost::asio::io_service ioServiceWorker2;
 
+    std::string client1AIP = "127.0.0.1";
+    int client1APort = 10050;
+    boost::asio::io_service ioServiceClient1A;
+
     CentralMaster cMaster(ioServiceMaster, masterIP, masterPort);
     // Need to start several threads so messages aren't dropped while being processed.
     cMaster.run();
@@ -211,6 +215,10 @@ int main(int argc, char* argv[]) {
     /// Start worker server 2
     CentralWorker wCentral2(ioServiceWorker2, masterIP, masterPort, worker2IP, worker2Port);
     wCentral2.run();
+
+
+    CentralClient cCentral1A(ioServiceClient1A, masterIP, masterPort, worker1IP, worker1Port, client1AIP, client1APort);
+    cCentral1A.run();
 
 
     /// Unknown message kind test. Pretending to be worker1.
@@ -258,6 +266,14 @@ int main(int argc, char* argv[]) {
     } else {
         LOGS(_log, LOG_LVL_INFO, "Worker lists match!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     }
+
+
+    /// Client
+    std::cout << "\n\n\n******3******* client register key ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" << std::endl;
+    std::string keyA("asdf1");
+    int keyAChunk = 4001;
+    int keyASubchunk = 200001;
+    cCentral1A.keyInsertReq(keyA, keyAChunk, keyASubchunk);
 
 
 

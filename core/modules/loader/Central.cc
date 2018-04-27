@@ -92,7 +92,7 @@ void CentralWorker::registerWithMaster() {
 }
 
 
-bool CentralWorker::workerInfoRecieve(BufferUdp::Ptr const&  data) {
+bool CentralWorker::workerInfoReceive(BufferUdp::Ptr const&  data) {
     // LOGS(_log, LOG_LVL_INFO, " ******&&& workerInfoRecieve data=" << data->dump());
     // Open the data protobuffer and add it to our list.
     StringElement::Ptr sData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
@@ -100,13 +100,21 @@ bool CentralWorker::workerInfoRecieve(BufferUdp::Ptr const&  data) {
         LOGS(_log, LOG_LVL_WARN, "CentralWorker::workerInfoRecieve Failed to parse list");
         return false;
     }
-    auto protoList = sData->protoParse<proto::WorkerListItem>();
+    std::unique_ptr<proto::WorkerListItem> protoList = sData->protoParse<proto::WorkerListItem>();
     if (protoList == nullptr) {
         LOGS(_log, LOG_LVL_WARN, "CentralWorker::workerInfoRecieve Failed to parse list");
         return false;
     }
 
-    // &&& TODO move this to another thread
+    // &&& TODO move this call to another thread
+    _workerInfoReceive(protoList);
+    return true;
+}
+
+void CentralWorker::_workerInfoReceive(std::unique_ptr<proto::WorkerListItem>& protoL) {
+    std::unique_ptr<proto::WorkerListItem> protoList(std::move(protoL));
+
+
     // Check the information, if it is our network address, set or check our name.
     // Then compare it with the map, adding new/changed information.
     uint32_t name = protoList->name();
@@ -154,8 +162,80 @@ bool CentralWorker::workerInfoRecieve(BufferUdp::Ptr const&  data) {
 
     // Make/update entry in map.
     _wWorkerList->updateEntry(name, ip, port, strRange);
+}
 
+
+bool CentralWorker::workerKeyInsertReq(LoaderMsg const& inMsg, BufferUdp::Ptr const&  data) {
+    StringElement::Ptr sData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+    if (sData == nullptr) {
+        LOGS(_log, LOG_LVL_WARN, "CentralWorker::workerKeyInsertReq Failed to parse list");
+        return false;
+    }
+    auto protoData = sData->protoParse<proto::KeyInfoInsert>();
+    if (protoData == nullptr) {
+        LOGS(_log, LOG_LVL_WARN, "CentralWorker::workerKeyInsertReq Failed to parse list");
+        return false;
+    }
+
+    // &&& TODO move this to another thread
+    _workerKeyInsertReq(inMsg, protoData);
     return true;
+}
+
+void CentralWorker::_workerKeyInsertReq(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfoInsert>& protoBuf) {
+    std::unique_ptr<proto::KeyInfoInsert> protoData(std::move(protoBuf));
+
+    // Get the source of the request
+    proto::LdrNetAddress protoAddr = protoData->requester();
+    NetworkAddress nAddr(protoAddr.workerip(), protoAddr.workerport());
+
+    proto::KeyInfo protoKeyInfo = protoData->keyinfo();
+    std::string key = protoKeyInfo.key();
+    ChunkSubchunk chunkInfo(protoKeyInfo.chunk(), protoKeyInfo.subchunk());
+
+    /// &&& see if the key should be inserted into our map
+    std::unique_lock<std::mutex> lck(_idMapMtx);
+    if (_strRange.isInRange(key)) {
+        // insert into our map
+        auto res = _directorIdMap.insert(std::make_pair(key, chunkInfo));
+        lck.unlock();
+        if (not res.second) {
+            // &&& element already found, check file id and row number. Bad if not the same.
+            // TODO send back duplicate key mismatch message to the original requester and return
+        }
+        LOGS(_log, LOG_LVL_INFO, "Key inserted=" << key << "(" << chunkInfo << ")");
+        // TODO Send this item to the keyLogger (which would then send KEY_INSERT_COMPLETE back to the requester),
+        // for now this function will send the message back for proof of concept.
+        LoaderMsg msg(LoaderMsg::KEY_INSERT_COMPLETE, inMsg.msgId->element, getHostName(), getPort());
+        BufferUdp msgData;
+        msg.serializeToData(msgData);
+        // protoKeyInfo should still be the same
+        StringElement strElem;
+        protoKeyInfo.SerializeToString(&(strElem.element));
+        strElem.appendToData(msgData);
+        sendBufferTo(nAddr.ip, nAddr.port, msgData);
+    } else {
+        // &&& TODO find the target range in the list and send the request there
+        auto targetWorker = _wWorkerList->findWorkerForKey(key);
+        if (targetWorker == nullptr) { return; }
+        _forwardKeyInsertRequest(targetWorker, inMsg, protoData);
+    }
+}
+
+
+void CentralWorker::_forwardKeyInsertRequest(WWorkerListItem::Ptr const& target, LoaderMsg const& inMsg,
+                                             std::unique_ptr<proto::KeyInfoInsert> const& protoData) {
+    // The proto buffer should be the same, just need a new message.
+    LoaderMsg msg(LoaderMsg::KEY_INSERT_REQ, inMsg.msgId->element, getHostName(), getPort());
+    BufferUdp msgData;
+    msg.serializeToData(msgData);
+
+    StringElement strElem;
+    protoData->SerializeToString(&(strElem.element));
+    strElem.appendToData(msgData);
+
+    auto nAddr = target->getAddress();
+    sendBufferTo(nAddr.ip, nAddr.port, msgData);
 }
 
 
@@ -169,9 +249,9 @@ void CentralWorker::_registerWithMaster() {
     protoBuf.set_workerip(getHostName());
     protoBuf.set_workerport(getPort());
 
-    StringElement addWorkerBuf;
-    protoBuf.SerializeToString(&(addWorkerBuf.element));
-    addWorkerBuf.appendToData(msgData);
+    StringElement strElem;
+    protoBuf.SerializeToString(&(strElem.element));
+    strElem.appendToData(msgData);
 
     sendBufferTo(getMasterHostName(), getMasterPort(), msgData);
 }
@@ -210,6 +290,47 @@ void CentralMaster::addWorker(std::string const& ip, int port) {
 
 MWorkerListItem::Ptr CentralMaster::getWorkerNamed(uint32_t name) {
     return _mWorkerList->getWorkerNamed(name);
+}
+
+
+void CentralClient::handleKeyInfo(LoaderMsg const& inMsg, BufferUdp::Ptr const& data) {
+    LOGS(_log, LOG_LVL_ERROR, "\n\n&&& **** CentralClient::handleKeyInfo needs code ****\n\n");
+}
+
+
+void CentralClient::handleKeyInsertComplete(LoaderMsg const& inMsg, BufferUdp::Ptr const& data) {
+    LOGS(_log, LOG_LVL_ERROR, "\n\n&&& **** CentralClient::handleKeyInsertComplete needs code ****\n\n");
+    /// Locate the original one shot and mark it as done.
+}
+
+
+void CentralClient::keyInsertReq(std::string const& key, int chunk, int subchunk) {
+
+    /// &&& TODO make this a one shot
+    LoaderMsg msg(LoaderMsg::KEY_INSERT_REQ, getNextMsgId(), getHostName(), getPort());
+    BufferUdp msgData;
+    msg.serializeToData(msgData);
+    // create the proto buffer
+    lsst::qserv::proto::KeyInfoInsert protoKeyInsert;
+    lsst::qserv::proto::LdrNetAddress* protoAddr =  protoKeyInsert.mutable_requester();
+    protoAddr->set_workerip(getHostName());
+    protoAddr->set_workerport(getPort());
+    lsst::qserv::proto::KeyInfo* protoKeyInfo = protoKeyInsert.mutable_keyinfo();
+    protoKeyInfo->set_key(key);
+    protoKeyInfo->set_chunk(chunk);
+    protoKeyInfo->set_subchunk(subchunk);
+
+    StringElement strElem;
+    protoKeyInsert.SerializeToString(&(strElem.element));
+    strElem.appendToData(msgData);
+
+    sendBufferTo(getWorkerHostName(), getWorkerPort(), msgData);
+}
+
+
+std::ostream& operator<<(std::ostream& os, ChunkSubchunk csc) {
+    os << "chunk=" << csc.chunk << " subchunk=" << csc.subchunk;
+    return os;
 }
 
 

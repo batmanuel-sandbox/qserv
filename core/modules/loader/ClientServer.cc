@@ -64,13 +64,18 @@ BufferUdp::Ptr ClientServer::parseMsg(BufferUdp::Ptr const& data,
         break;
 
     case LoaderMsg::KEY_INFO:
-        LOGS(_log, LOG_LVL_INFO, "KEY_INFO " << inMsg.msgKind->element);
+        LOGS(_log, LOG_LVL_INFO, "KEY_INFO");
         _centralClient->handleKeyInfo(inMsg, data);
         break;
 
+    case LoaderMsg::KEY_INSERT_COMPLETE:
+        LOGS(_log, LOG_LVL_INFO, "KEY_INSERT_COMPLETE");
+        _centralClient->handleKeyInsertComplete(inMsg, data);
+        break;
+
     // following not expected by client
+    case LoaderMsg::KEY_INSERT_REQ: //  This is what this client should send out
     case LoaderMsg::KEY_INFO_REQ: //  This is what this client should send out
-    case LoaderMsg::WORKER_INSERT_KEY_REQ:
     case LoaderMsg::MAST_WORKER_INFO:
     case LoaderMsg::MAST_WORKER_LIST: // TODO having the client know this might be useful.
     case LoaderMsg::MAST_INFO:
@@ -163,6 +168,7 @@ void ClientServer::_msgRecieved(LoaderMsg const& inMsg, BufferUdp::Ptr const& da
         LOGS(_log, LOG_LVL_INFO, "MsgRecieved " << os.str());
     }
 }
+
 
 }}} // namespace lsst:qserv::loader
 

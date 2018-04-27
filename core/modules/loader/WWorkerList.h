@@ -70,7 +70,11 @@ public:
     virtual ~WWorkerListItem() = default;
 
     void setNetworkAddress(std::string const& ip, int port);
-    void setRangeStr(StringRange const& strRange);
+
+    /// @Return return the previous range value.
+    StringRange setRangeStr(StringRange const& strRange);
+
+    StringRange getRange() const;
 
     NetworkAddress getAddress() const {
         std::lock_guard<std::mutex> lck(_mtx);
@@ -90,6 +94,8 @@ public:
     util::CommandTracked::Ptr createCommandWorkerInfoReq(CentralWorker* centralW);
 
     bool equal(WWorkerListItem &other);
+
+    bool containsKey(std::string const&) const;
 
     friend std::ostream& operator<<(std::ostream& os, WWorkerListItem const& item);
 private:
@@ -152,6 +158,7 @@ public:
     }
 
     void updateEntry(uint32_t name, std::string const& ip, int port, StringRange& strRange);
+    WWorkerListItem::Ptr findWorkerForKey(std::string const& key);
 
     std::string dump() const;
 
@@ -161,10 +168,11 @@ protected:
     CentralWorker* _central;
     std::map<uint32_t, WWorkerListItem::Ptr> _nameMap;
     std::map<NetworkAddress, WWorkerListItem::Ptr> _ipMap;
+    std::map<StringRange, WWorkerListItem::Ptr> _rangeMap;
     bool _wListChanged{false}; ///< true if the list has changed
     BufferUdp::Ptr _stateListData; ///< message
     uint32_t _totalNumberOfWorkers{0}; ///< total number of workers according to the master.
-    mutable std::mutex _mapMtx; ///< protects _nameMap, _ipMap, _wListChanged
+    mutable std::mutex _mapMtx; ///< protects _nameMap, _ipMap, _rangeMap, _wListChanged
 
     std::atomic<uint32_t> _sequence{1};
 };

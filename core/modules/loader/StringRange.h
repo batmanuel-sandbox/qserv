@@ -100,7 +100,7 @@ public:
     }
 
     /// Return true if other functionally equivalent.
-    bool equal(StringRange const& other) {
+    bool equal(StringRange const& other) const {
         if (_valid != other._valid) { return false; }
         if (not _valid) { return true; }  // both invalid
         if (_min != other._min) { return false; }
@@ -110,10 +110,28 @@ public:
         return true;
     }
 
+    bool isInRange(std::string const& str) const {
+        if (not _valid) { return false; }
+        if (str < _min) { return false; }
+        if (not _unlimited && str >= _max) { return false; }
+        return true;
+    }
+
     bool getValid() const { return _valid; }
     bool getUnlimited() const { return _unlimited; }
     std::string getMin() const { return _min; }
     std::string getMax() const { return _max; }
+
+    bool operator<(StringRange const& other) const {
+        /// Arbitrarily, invalid are less than valid, but such comparisons should be avoided.
+        if (_valid != other._valid) {
+            if (not _valid) { return true; }
+            return false;
+        }
+        /// Compare minimums. There should be little if any overlap.
+        if (_min < other._min) { return true; }
+        return false;
+    }
 
 
     friend std::ostream& operator<<(std::ostream&, StringRange const&);

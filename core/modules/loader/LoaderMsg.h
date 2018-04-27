@@ -296,7 +296,8 @@ public:
         MAST_WORKER_INFO_REQ,  // Request information for a single worker.
         MAST_WORKER_INFO,      // All the information the master has about one worker.
         MAST_WORKER_ADD_REQ,   // Request the Master add the worker. MSG_RECIEVED + MAST_WORKER_INFO
-        WORKER_INSERT_KEY_REQ, // Insert a new key with info. MSG_RECEIVED + KEY_INFO
+        KEY_INSERT_REQ,        // Insert a new key with info. MSG_RECEIVED + KEY_INFO
+        KEY_INSERT_COMPLETE,   // Key has been inserted and logged.
         KEY_INFO_REQ,          // Request info for a single key.
         KEY_INFO               // Information about a specific key. (includes file id and row)
     };

@@ -91,7 +91,7 @@ BufferUdp::Ptr MasterServer::parseMsg(BufferUdp::Ptr const& data,
         case LoaderMsg::MAST_INFO:
         case LoaderMsg::MAST_WORKER_LIST:
         case LoaderMsg::MAST_WORKER_INFO:
-        case LoaderMsg::WORKER_INSERT_KEY_REQ:
+        case LoaderMsg::KEY_INSERT_REQ:
         case LoaderMsg::KEY_INFO_REQ:
         case LoaderMsg::KEY_INFO:
             /// &&& TODO add msg unexpected by master response.

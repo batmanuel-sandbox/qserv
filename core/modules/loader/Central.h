@@ -31,10 +31,12 @@
 #include <vector>
 
 // Qserv headers
+#include "loader/ClientServer.h"
 #include "loader/MasterServer.h"
 #include "loader/MWorkerList.h"
 #include "loader/WWorkerList.h"
 #include "loader/WorkerServer.h"
+#include "proto/loader.pb.h"
 #include "util/ThreadPool.h"
 
 
@@ -42,6 +44,15 @@
 namespace lsst {
 namespace qserv {
 namespace loader {
+
+/// &&& TODO add fileId and row to this so it can be checked in _workerKeyInsertReq ?
+struct ChunkSubchunk {
+    ChunkSubchunk(int chunk_, int subchunk_) : chunk(chunk_), subchunk(subchunk_) {}
+    int const chunk;
+    int const subchunk;
+    friend std::ostream& operator<<(std::ostream& os, ChunkSubchunk csc);
+};
+
 
 /// &&& Initially, just setting this up as Central for the worker, but may work for both Worker and Master.
 /// &&& This class is central to loader workers and the master.
@@ -133,7 +144,8 @@ public:
 
     void registerWithMaster();
 
-    bool workerInfoRecieve(BufferUdp::Ptr const&  data);
+    bool workerInfoReceive(BufferUdp::Ptr const&  data); // &&& spelling
+    bool workerKeyInsertReq(LoaderMsg const& inMsg, BufferUdp::Ptr const&  data);
 
     bool isOurNameInvalid() const {
         std::lock_guard<std::mutex> lck(_ourNameMtx);
@@ -166,7 +178,12 @@ private:
     void _registerWithMaster();
     void _monitorWorkers();
 
-    /// &&& the following probably need mutex protection.
+    void _workerInfoReceive(std::unique_ptr<proto::WorkerListItem>& protoBuf);
+    void _workerKeyInsertReq(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfoInsert>& protoBuf);
+    void _forwardKeyInsertRequest(WWorkerListItem::Ptr const& target, LoaderMsg const& inMsg,
+                                  std::unique_ptr<proto::KeyInfoInsert> const& protoData);
+
+
     const std::string _hostName;
     const int         _port;
     WWorkerList::Ptr _wWorkerList{new WWorkerList(this)};
@@ -179,6 +196,9 @@ private:
     StringRange _strRange;
     // TODO _directorIdMap
     std::mutex _idMapMtx; ///< protect _rangeStr and _directorIdMap
+
+    std::map<std::string, ChunkSubchunk> _directorIdMap;
+
 };
 
 
@@ -188,7 +208,7 @@ public:
     CentralMaster(boost::asio::io_service& ioService,
                   std::string const& masterHostName, int masterPort)
         : Central(ioService, masterHostName, masterPort) {
-        _server = std::make_shared<MasterServer>(_ioService, _masterHostName, _masterPort, this);
+        _server = std::make_shared<MasterServer>(_ioService, masterHostName, masterPort, this);
     }
 
     ~CentralMaster() override { _mWorkerList.reset(); }
@@ -205,8 +225,45 @@ private:
     MWorkerList::Ptr _mWorkerList{new MWorkerList(this)};
 
     std::atomic<bool> _firstWorkerRegistered{false};
-    // std::mutex _firstWorkerRegisteredMtx; &&&
 };
+
+
+/// TODO Maybe base this one CentralWorker or have a common base class?
+class CentralClient : public Central {
+public:
+    CentralClient(boost::asio::io_service& ioService,
+                  std::string const& masterHostName, int masterPort,
+                  std::string const& workerHostName, int workerPort,
+                  std::string const& hostName, int port)
+        : Central(ioService, masterHostName, masterPort),
+          _workerHostName(workerHostName), _workerPort(workerPort),
+          _hostName(hostName), _port(port) {
+        _server = std::make_shared<ClientServer>(_ioService, _hostName, _port, this);
+    }
+
+    ~CentralClient() override = default;
+
+    std::string getHostName() const { return _hostName; }
+    int getPort() const { return _port; }
+
+    std::string getWorkerHostName() const { return _workerHostName; }
+    int getWorkerPort() const { return _workerPort; }
+
+
+    void keyInsertReq(std::string const& key, int chunk, int subchunk);
+
+    void handleKeyInfo(LoaderMsg const& inMsg, BufferUdp::Ptr const& data);
+    void handleKeyInsertComplete(LoaderMsg const& inMsg, BufferUdp::Ptr const& data);
+
+    std::string getOurLogId() override { return "client"; }
+
+private:
+    const std::string _workerHostName;
+    const int         _workerPort;
+    const std::string _hostName;
+    const int         _port;
+};
+
 
 }}} // namespace lsst::qserv::loader
 

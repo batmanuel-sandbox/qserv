@@ -57,6 +57,8 @@ public:
                                     LoaderMsg const& inMsg,
                                     int status, std::string const& msgTxt); // TODO shows up in both MasterServer and WorkerServer
 
+    void keyInsert(std::string const& key, int chunk, int subchunk);
+
 private:
     void _msgRecieved(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
                       boost::asio::ip::udp::endpoint const& senderEndpoint);
@@ -68,4 +70,4 @@ private:
 
 }}} // namespace lsst::qserv::loader
 
-#endif // LSST_QSERV_LOADER_ClientSERVER_H_
+#endif // LSST_QSERV_LOADER_CLIENTSERVER_H_
