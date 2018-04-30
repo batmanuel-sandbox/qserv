@@ -76,8 +76,7 @@ public:
 
     DoListItem() = default;
 
-    // Constructor for a one shot item. 'cmd' should already have been queued
-    DoListItem(util::CommandTracked::Ptr const& cmd) : _oneShot(true), _command(cmd) {}
+
 
     DoListItem(DoListItem const&) = delete;
     DoListItem& operator=(DoListItem const&) = delete;
@@ -87,6 +86,7 @@ public:
     util::CommandTracked::Ptr runIfNeeded(TimeOut::TimePoint now) {
         std::lock_guard<std::mutex> lock(_mtx);
         if (_command == nullptr) {
+            if (_isOneShotDone()) { return nullptr; }
             if ((_needInfo || _timeOut.due(now)) && _timeRequest.due(now)) {
                 _timeRequest.triggered();
                     _command = createCommand();
@@ -107,7 +107,7 @@ public:
 
     bool removeFromList() {
         std::lock_guard<std::mutex> lock(_mtx);
-        return ((!_needInfo && _oneShot) || _remove);
+        return (_isOneShotDone() || _remove);
     }
 
     /// The info has been updated, so no need to ask for it for a while.
@@ -134,6 +134,12 @@ protected:
     TimeOut _timeRequest{std::chrono::seconds(5)}; ///< Rate limiter, no more than 1 message every 5 seconds
     util::CommandTracked::Ptr _command;
     std::mutex _mtx; ///< protects _timeOut, _timeRequest, _command, _oneShot, _needInfo
+
+private:
+    /// Lock _mtx before calling.
+    bool _isOneShotDone() {
+        return (!_needInfo && _oneShot);
+    }
 };
 
 
@@ -163,6 +169,8 @@ public:
         }
         return false;
     }
+
+    void runItemNow(DoListItem::Ptr const& item);
 
 
 private:

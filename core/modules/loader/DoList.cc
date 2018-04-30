@@ -74,6 +74,15 @@ void DoList::checkList() {
 }
 
 
+void DoList::runItemNow(DoListItem::Ptr const& item) {
+    auto cmd = item->runIfNeeded(TimeOut::Clock::now());
+    if (cmd != nullptr) {
+        LOGS(_log, LOG_LVL_INFO, "&&& DoList::addAndRunItemNow queing command");
+        _central.queueCmd(cmd);
+    }
+}
+
+
 }}} // namespace lsst:qserv::loader
 
 

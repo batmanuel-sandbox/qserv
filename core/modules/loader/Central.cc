@@ -210,9 +210,14 @@ void CentralWorker::_workerKeyInsertReq(LoaderMsg const& inMsg, std::unique_ptr<
         BufferUdp msgData;
         msg.serializeToData(msgData);
         // protoKeyInfo should still be the same
+        proto::KeyInfo protoReply;
+        protoReply.set_key(key);
+        protoReply.set_chunk(chunkInfo.chunk);
+        protoReply.set_subchunk(chunkInfo.subchunk);
         StringElement strElem;
-        protoKeyInfo.SerializeToString(&(strElem.element));
+        protoReply.SerializeToString(&(strElem.element));
         strElem.appendToData(msgData);
+        LOGS(_log, LOG_LVL_INFO, "&&& sending complete " << key << " to " << nAddr << " from " << _ourName);
         sendBufferTo(nAddr.ip, nAddr.port, msgData);
     } else {
         // &&& TODO find the target range in the list and send the request there
@@ -294,19 +299,67 @@ MWorkerListItem::Ptr CentralMaster::getWorkerNamed(uint32_t name) {
 
 
 void CentralClient::handleKeyInfo(LoaderMsg const& inMsg, BufferUdp::Ptr const& data) {
-    LOGS(_log, LOG_LVL_ERROR, "\n\n&&& **** CentralClient::handleKeyInfo needs code ****\n\n");
+    LOGS(_log, LOG_LVL_INFO, "\n\n&&& **** CentralClient::handleKeyInfo needs code ****\n\n");
 }
 
 
 void CentralClient::handleKeyInsertComplete(LoaderMsg const& inMsg, BufferUdp::Ptr const& data) {
-    LOGS(_log, LOG_LVL_ERROR, "\n\n&&& **** CentralClient::handleKeyInsertComplete needs code ****\n\n");
+    LOGS(_log, LOG_LVL_INFO, "\n\n&&& **** CentralClient::handleKeyInsertComplete needs code ****\n\n");
+
+    StringElement::Ptr sData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+    if (sData == nullptr) {
+        LOGS(_log, LOG_LVL_WARN, "CentralClient::handleKeyInsertComplete Failed to parse list");
+        return;
+    }
+    auto protoData = sData->protoParse<proto::KeyInfo>();
+    if (protoData == nullptr) {
+        LOGS(_log, LOG_LVL_WARN, "CentralClient::handleKeyInsertComplete Failed to parse list");
+        return;
+    }
+
+    _handleKeyInsertComplete(inMsg, protoData);
+}
+
+void CentralClient::_handleKeyInsertComplete(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfo>& protoBuf) {
+    std::unique_ptr<proto::KeyInfo> protoData(std::move(protoBuf));
+
+    std::string key = protoData->key();
+    ChunkSubchunk chunkInfo(protoData->chunk(), protoData->subchunk());
+
+    LOGS(_log, LOG_LVL_INFO, "trying to remove oneShot for key=" << key << " " << chunkInfo);
     /// Locate the original one shot and mark it as done.
+    CentralClient::KeyInsertReqOneShot::Ptr keyInsertOneShot;
+    {
+        std::lock_guard<std::mutex> lck(_waitingKeyMtx);
+        auto iter = _waitingKeyMap.find(key);
+        if (iter == _waitingKeyMap.end()) {
+            LOGS(_log, LOG_LVL_WARN, "handleKeyInsertComplete could not find key=" << key);
+            return;
+        }
+        keyInsertOneShot = iter->second;
+        _waitingKeyMap.erase(iter);
+    }
+    keyInsertOneShot->infoReceived();
+    LOGS(_log, LOG_LVL_INFO, "Successfully inserted key=" << key << " " << chunkInfo);
 }
 
 
 void CentralClient::keyInsertReq(std::string const& key, int chunk, int subchunk) {
+    // Insert a oneShot DoListItem to keep trying to add the key until
+    // we get word that it has been added successfully.
+    LOGS(_log, LOG_LVL_INFO, "Trying to insert key=" << key << " chunk=" << chunk <<
+                             " subchunk=" <<subchunk);
+    auto keyInsertOneShot = std::make_shared<CentralClient::KeyInsertReqOneShot>(this, key, chunk, subchunk);
+    {
+        std::lock_guard<std::mutex> lck(_waitingKeyMtx);
+        _waitingKeyMap[key] = keyInsertOneShot;
+    }
+    runAndAddDoListItem(keyInsertOneShot);
+}
 
-    /// &&& TODO make this a one shot
+
+void CentralClient::_keyInsertReq(std::string const& key, int chunk, int subchunk) {
+    LOGS(_log, LOG_LVL_INFO, "&&& CentralClient::_keyInsertReq trying key=" << key);
     LoaderMsg msg(LoaderMsg::KEY_INSERT_REQ, getNextMsgId(), getHostName(), getPort());
     BufferUdp msgData;
     msg.serializeToData(msgData);

@@ -199,6 +199,15 @@ int main(int argc, char* argv[]) {
     int client1APort = 10050;
     boost::asio::io_service ioServiceClient1A;
 
+    std::string client1BIP = "127.0.0.1";
+    int client1BPort = 10051;
+    boost::asio::io_service ioServiceClient1B;
+
+    std::string client2AIP = "127.0.0.1";
+    int client2APort = 10053;
+    boost::asio::io_service ioServiceClient2A;
+
+
     CentralMaster cMaster(ioServiceMaster, masterIP, masterPort);
     // Need to start several threads so messages aren't dropped while being processed.
     cMaster.run();
@@ -210,6 +219,7 @@ int main(int argc, char* argv[]) {
     /// Start worker server 1
     CentralWorker wCentral1(ioServiceWorker1, masterIP, masterPort, worker1IP, worker1Port);
     wCentral1.run();
+    wCentral1.run();
 
 
     /// Start worker server 2
@@ -219,6 +229,12 @@ int main(int argc, char* argv[]) {
 
     CentralClient cCentral1A(ioServiceClient1A, masterIP, masterPort, worker1IP, worker1Port, client1AIP, client1APort);
     cCentral1A.run();
+
+    CentralClient cCentral1B(ioServiceClient1B, masterIP, masterPort, worker1IP, worker1Port, client1BIP, client1BPort);
+    cCentral1B.run();
+
+    CentralClient cCentral2A(ioServiceClient1A, masterIP, masterPort, worker2IP, worker2Port, client2AIP, client2APort);
+    cCentral2A.run();
 
 
     /// Unknown message kind test. Pretending to be worker1.
@@ -269,13 +285,23 @@ int main(int argc, char* argv[]) {
 
 
     /// Client
-    std::cout << "\n\n\n******3******* client register key ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" << std::endl;
+    std::cout << "\n\n\n******3******* client register key A^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" << std::endl;
     std::string keyA("asdf1");
     int keyAChunk = 4001;
     int keyASubchunk = 200001;
     cCentral1A.keyInsertReq(keyA, keyAChunk, keyASubchunk);
 
 
+    sleep(3); // remove &&&
+    std::cout << "\n\n\n******4******* client register key B^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" << std::endl;
+    std::string keyB("ndjes_bob");
+    int keyBChunk = 9871;
+    int keyBSubchunk = 65008;
+    cCentral1B.keyInsertReq(keyB, keyBChunk, keyBSubchunk);
+
+
+    // &&& TODO retrieve keys keyA and keyB
+    sleep(3);
 
     //ioService.stop(); // &&& this doesn't seem to work cleanly
     // mastT.join(); &&&

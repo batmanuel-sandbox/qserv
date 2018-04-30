@@ -94,6 +94,11 @@ public:
         return _doList.addItem(item);
     }
 
+    bool runAndAddDoListItem(DoListItem::Ptr const& item) {
+        _doList.runItemNow(item);
+        return _doList.addItem(item);
+    }
+
 
     virtual std::string getOurLogId() { return "baseclass"; }
 
@@ -258,10 +263,48 @@ public:
     std::string getOurLogId() override { return "client"; }
 
 private:
+    void _keyInsertReq(std::string const& key, int chunk, int subchunk);
+    void _handleKeyInsertComplete(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfo>& protoBuf);
+
     const std::string _workerHostName;
     const int         _workerPort;
     const std::string _hostName;
     const int         _port;
+
+
+    /// It should keep trying this until it works, and then drop it from _waitingKeyMap.
+    struct KeyInsertReqOneShot : public DoListItem {
+        using Ptr = std::shared_ptr<KeyInsertReqOneShot>;
+        struct CommandData {
+            CommandData(CentralClient* central_, std::string const& key_, int chunk_, int subchunk_) :
+                central(central_), key(key_), chunk(chunk_), subchunk(subchunk_) {}
+            CentralClient* central;
+            std::string const& key;
+            int chunk;
+            int subchunk;
+        };
+
+        KeyInsertReqOneShot(CentralClient* central_, std::string const& key_, int chunk_, int subchunk_) :
+                   cmdData(central_, key_, chunk_, subchunk_) {
+                   _oneShot = true;
+               }
+
+        CommandData cmdData;
+        util::CommandTracked::Ptr createCommand() override {
+            struct KeyInsertReqCmd : public util::CommandTracked {
+                KeyInsertReqCmd(CommandData& cd) : cData(cd) {}
+                void action(util::CmdData*) override {
+                    cData.central->_keyInsertReq(cData.key, cData.chunk, cData.subchunk);
+                }
+                CommandData cData;
+            };
+            return std::make_shared<KeyInsertReqCmd>(cmdData);
+        }
+    };
+
+
+    std::map<std::string, KeyInsertReqOneShot::Ptr> _waitingKeyMap;
+    std::mutex _waitingKeyMtx; ///< protects _waitingKeyMap
 };
 
 
