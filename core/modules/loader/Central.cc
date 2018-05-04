@@ -23,6 +23,9 @@
 
 
 // Class header
+#include "Central.h"
+
+// system headers
 #include <boost/asio.hpp>
 #include <iostream>
 
@@ -37,7 +40,7 @@
 
 // LSST headers
 #include "lsst/log/Log.h"
-#include "Central.h"
+
 
 namespace {
 LOG_LOGGER _log = LOG_GET("lsst.qserv.loader.Central");
@@ -111,6 +114,7 @@ bool CentralWorker::workerInfoReceive(BufferUdp::Ptr const&  data) {
     return true;
 }
 
+
 void CentralWorker::_workerInfoReceive(std::unique_ptr<proto::WorkerListItem>& protoL) {
     std::unique_ptr<proto::WorkerListItem> protoList(std::move(protoL));
 
@@ -182,6 +186,7 @@ bool CentralWorker::workerKeyInsertReq(LoaderMsg const& inMsg, BufferUdp::Ptr co
     return true;
 }
 
+
 void CentralWorker::_workerKeyInsertReq(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfoInsert>& protoBuf) {
     std::unique_ptr<proto::KeyInfoInsert> protoData(std::move(protoBuf));
 
@@ -244,6 +249,98 @@ void CentralWorker::_forwardKeyInsertRequest(WWorkerListItem::Ptr const& target,
 }
 
 
+bool CentralWorker::workerKeyInfoReq(LoaderMsg const& inMsg, BufferUdp::Ptr const&  data) {
+    StringElement::Ptr sData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
+    if (sData == nullptr) {
+        LOGS(_log, LOG_LVL_WARN, "CentralWorker::workerKeyInfoReq Failed to parse list");
+        return false;
+    }
+    auto protoData = sData->protoParse<proto::KeyInfoInsert>();  /// &&& KeyInfoInsert <- more generic name or new type for key lookup?
+    if (protoData == nullptr) {
+        LOGS(_log, LOG_LVL_WARN, "CentralWorker::workerKeyInfoReq Failed to parse list");
+        return false;
+    }
+
+    // &&& TODO move this to another thread
+    _workerKeyInfoReq(inMsg, protoData);
+    return true;
+}
+
+
+// &&& alter
+void CentralWorker::_workerKeyInfoReq(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfoInsert>& protoBuf) {
+    std::unique_ptr<proto::KeyInfoInsert> protoData(std::move(protoBuf));
+
+    // Get the source of the request
+    proto::LdrNetAddress protoAddr = protoData->requester();
+    NetworkAddress nAddr(protoAddr.workerip(), protoAddr.workerport());
+
+    proto::KeyInfo protoKeyInfo = protoData->keyinfo();
+    std::string key = protoKeyInfo.key();
+    //    ChunkSubchunk chunkInfo(protoKeyInfo.chunk(), protoKeyInfo.subchunk());  &&&
+
+    /// &&& see if the key is in our map
+    std::unique_lock<std::mutex> lck(_idMapMtx);
+    if (_strRange.isInRange(key)) {
+        // check out map
+        auto iter = _directorIdMap.find(key);
+        lck.unlock();
+
+        // Key found or not, message will be returned.
+        LoaderMsg msg(LoaderMsg::KEY_INFO, inMsg.msgId->element, getHostName(), getPort());
+        BufferUdp msgData;
+        msg.serializeToData(msgData);
+        proto::KeyInfo protoReply;
+        protoReply.set_key(key);
+        if (iter == _directorIdMap.end()) {
+            // key not found message.
+            protoReply.set_chunk(0);
+            protoReply.set_subchunk(0);
+            protoReply.set_success(false);
+            LOGS(_log, LOG_LVL_INFO, "Key info not found key=" << key);
+        } else {
+            // key found message.
+            auto elem = iter->second;
+            protoReply.set_chunk(elem.chunk);
+            protoReply.set_subchunk(elem.subchunk);
+            protoReply.set_success(true);
+            LOGS(_log, LOG_LVL_INFO, "Key info lookup key=" << key <<
+                 " (" << protoReply.chunk() << ", " << protoReply.subchunk() << ")");
+        }
+        StringElement strElem;
+        protoReply.SerializeToString(&(strElem.element));
+        strElem.appendToData(msgData);
+        LOGS(_log, LOG_LVL_INFO, "&&& sending key lookup " << key << " to " << nAddr << " from " << _ourName);
+        sendBufferTo(nAddr.ip, nAddr.port, msgData);
+    } else {
+        // Find the target range in the list and send the request there
+        auto targetWorker = _wWorkerList->findWorkerForKey(key);
+        if (targetWorker == nullptr) { return; } // Client will have to try again.
+        _forwardKeyInfoRequest(targetWorker, inMsg, protoData);
+    }
+}
+
+
+// &&& alter
+// TODO This looks a lot like the other _forward*** functions, try to combine them.
+void CentralWorker::_forwardKeyInfoRequest(WWorkerListItem::Ptr const& target, LoaderMsg const& inMsg,
+                                             std::unique_ptr<proto::KeyInfoInsert> const& protoData) {
+    // The proto buffer should be the same, just need a new message.
+    LoaderMsg msg(LoaderMsg::KEY_INFO_REQ, inMsg.msgId->element, getHostName(), getPort());
+    BufferUdp msgData;
+    msg.serializeToData(msgData);
+
+    StringElement strElem;
+    protoData->SerializeToString(&(strElem.element));
+    strElem.appendToData(msgData);
+
+    auto nAddr = target->getAddress();
+    sendBufferTo(nAddr.ip, nAddr.port, msgData);
+}
+
+
+
+
 void CentralWorker::_registerWithMaster() {
 
     LoaderMsg msg(LoaderMsg::MAST_WORKER_ADD_REQ, getNextMsgId(), getHostName(), getPort());
@@ -298,87 +395,6 @@ MWorkerListItem::Ptr CentralMaster::getWorkerNamed(uint32_t name) {
 }
 
 
-void CentralClient::handleKeyInfo(LoaderMsg const& inMsg, BufferUdp::Ptr const& data) {
-    LOGS(_log, LOG_LVL_INFO, "\n\n&&& **** CentralClient::handleKeyInfo needs code ****\n\n");
-}
-
-
-void CentralClient::handleKeyInsertComplete(LoaderMsg const& inMsg, BufferUdp::Ptr const& data) {
-    LOGS(_log, LOG_LVL_INFO, "\n\n&&& **** CentralClient::handleKeyInsertComplete needs code ****\n\n");
-
-    StringElement::Ptr sData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
-    if (sData == nullptr) {
-        LOGS(_log, LOG_LVL_WARN, "CentralClient::handleKeyInsertComplete Failed to parse list");
-        return;
-    }
-    auto protoData = sData->protoParse<proto::KeyInfo>();
-    if (protoData == nullptr) {
-        LOGS(_log, LOG_LVL_WARN, "CentralClient::handleKeyInsertComplete Failed to parse list");
-        return;
-    }
-
-    _handleKeyInsertComplete(inMsg, protoData);
-}
-
-void CentralClient::_handleKeyInsertComplete(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfo>& protoBuf) {
-    std::unique_ptr<proto::KeyInfo> protoData(std::move(protoBuf));
-
-    std::string key = protoData->key();
-    ChunkSubchunk chunkInfo(protoData->chunk(), protoData->subchunk());
-
-    LOGS(_log, LOG_LVL_INFO, "trying to remove oneShot for key=" << key << " " << chunkInfo);
-    /// Locate the original one shot and mark it as done.
-    CentralClient::KeyInsertReqOneShot::Ptr keyInsertOneShot;
-    {
-        std::lock_guard<std::mutex> lck(_waitingKeyMtx);
-        auto iter = _waitingKeyMap.find(key);
-        if (iter == _waitingKeyMap.end()) {
-            LOGS(_log, LOG_LVL_WARN, "handleKeyInsertComplete could not find key=" << key);
-            return;
-        }
-        keyInsertOneShot = iter->second;
-        _waitingKeyMap.erase(iter);
-    }
-    keyInsertOneShot->infoReceived();
-    LOGS(_log, LOG_LVL_INFO, "Successfully inserted key=" << key << " " << chunkInfo);
-}
-
-
-void CentralClient::keyInsertReq(std::string const& key, int chunk, int subchunk) {
-    // Insert a oneShot DoListItem to keep trying to add the key until
-    // we get word that it has been added successfully.
-    LOGS(_log, LOG_LVL_INFO, "Trying to insert key=" << key << " chunk=" << chunk <<
-                             " subchunk=" <<subchunk);
-    auto keyInsertOneShot = std::make_shared<CentralClient::KeyInsertReqOneShot>(this, key, chunk, subchunk);
-    {
-        std::lock_guard<std::mutex> lck(_waitingKeyMtx);
-        _waitingKeyMap[key] = keyInsertOneShot;
-    }
-    runAndAddDoListItem(keyInsertOneShot);
-}
-
-
-void CentralClient::_keyInsertReq(std::string const& key, int chunk, int subchunk) {
-    LOGS(_log, LOG_LVL_INFO, "&&& CentralClient::_keyInsertReq trying key=" << key);
-    LoaderMsg msg(LoaderMsg::KEY_INSERT_REQ, getNextMsgId(), getHostName(), getPort());
-    BufferUdp msgData;
-    msg.serializeToData(msgData);
-    // create the proto buffer
-    lsst::qserv::proto::KeyInfoInsert protoKeyInsert;
-    lsst::qserv::proto::LdrNetAddress* protoAddr =  protoKeyInsert.mutable_requester();
-    protoAddr->set_workerip(getHostName());
-    protoAddr->set_workerport(getPort());
-    lsst::qserv::proto::KeyInfo* protoKeyInfo = protoKeyInsert.mutable_keyinfo();
-    protoKeyInfo->set_key(key);
-    protoKeyInfo->set_chunk(chunk);
-    protoKeyInfo->set_subchunk(subchunk);
-
-    StringElement strElem;
-    protoKeyInsert.SerializeToString(&(strElem.element));
-    strElem.appendToData(msgData);
-
-    sendBufferTo(getWorkerHostName(), getWorkerPort(), msgData);
-}
 
 
 std::ostream& operator<<(std::ostream& os, ChunkSubchunk csc) {

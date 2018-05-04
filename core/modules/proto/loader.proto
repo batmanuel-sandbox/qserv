@@ -79,6 +79,7 @@ message KeyInfo {
 	required string key      = 1;
 	required uint32 chunk    = 2;
 	required uint32 subchunk = 3;
+	optional bool   success  = 4;
 }
 
 

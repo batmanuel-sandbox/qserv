@@ -31,7 +31,7 @@
 // Third-party headers
 
 // Qserv headers
-#include "loader/Central.h"
+#include "loader/CentralClient.h"
 #include "loader/LoaderMsg.h"
 #include "proto/loader.pb.h"
 #include "proto/ProtoImporter.h"

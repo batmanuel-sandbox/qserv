@@ -27,6 +27,7 @@
 
 // Qserv headers
 #include "loader/Central.h"
+#include "loader/CentralClient.h"
 #include "loader/LoaderMsg.h"
 #include "loader/MasterServer.h"
 #include "loader/WorkerServer.h"
@@ -220,10 +221,13 @@ int main(int argc, char* argv[]) {
     CentralWorker wCentral1(ioServiceWorker1, masterIP, masterPort, worker1IP, worker1Port);
     wCentral1.run();
     wCentral1.run();
+    wCentral1.run();
 
 
     /// Start worker server 2
     CentralWorker wCentral2(ioServiceWorker2, masterIP, masterPort, worker2IP, worker2Port);
+    wCentral2.run();
+    wCentral2.run();
     wCentral2.run();
 
 
@@ -285,23 +289,68 @@ int main(int argc, char* argv[]) {
 
 
     /// Client
-    std::cout << "\n\n\n******3******* client register key A^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" << std::endl;
+    std::cout << "\n\n\n******3******* client register key A" << std::endl;
     std::string keyA("asdf1");
     int keyAChunk = 4001;
     int keyASubchunk = 200001;
-    cCentral1A.keyInsertReq(keyA, keyAChunk, keyASubchunk);
+    auto keyAInsert = cCentral1A.keyInsertReq(keyA, keyAChunk, keyASubchunk);
 
 
     sleep(3); // remove &&&
-    std::cout << "\n\n\n******4******* client register key B^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" << std::endl;
+    std::cout << "\n\n\n******4******* client register key B" << std::endl;
     std::string keyB("ndjes_bob");
     int keyBChunk = 9871;
     int keyBSubchunk = 65008;
-    cCentral1B.keyInsertReq(keyB, keyBChunk, keyBSubchunk);
+    auto keyBInsert = cCentral1B.keyInsertReq(keyB, keyBChunk, keyBSubchunk);
+
+    std::string keyC("asldiebb");
+    int keyCChunk = 422001;
+    int keyCSubchunk = 7373721;
 
 
     // &&& TODO retrieve keys keyA and keyB
-    sleep(3);
+    sleep(10);
+    if (keyAInsert->isFinished() && keyBInsert->isFinished()) {
+        LOGS(_log, LOG_LVL_INFO, "both keyA and KeyB inserted.");
+    } else {
+        LOGS(_log, LOG_LVL_INFO, "\nkeyA and KeyB insert something did not finish");
+        exit(-1);
+    }
+
+    // Retrieve keyA and keyB
+    std::cout << "\n\n\n******5******* client retrieve keyB keyA^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^***" << std::endl;
+    auto keyBInfo = cCentral1A.keyInfoReq(keyB);
+    auto keyAInfo = cCentral1A.keyInfoReq(keyA);
+    auto keyCInfo = cCentral1A.keyInfoReq(keyC);
+
+    keyAInfo->waitComplete();
+    keyBInfo->waitComplete();
+    std::cout << "\n\n\n******5******* client retrieve DONE keyB keyA^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^***" << std::endl;
+    LOGS(_log, LOG_LVL_INFO, "looked up keyA " << *keyAInfo);
+    LOGS(_log, LOG_LVL_INFO, "looked up keyB " << *keyBInfo);
+
+    keyCInfo->waitComplete();
+    LOGS(_log, LOG_LVL_INFO, "looked up (expect to fail) keyC " << *keyCInfo);
+
+    if (keyAInfo->key != keyA || keyAInfo->chunk != keyAChunk || keyAInfo->subchunk != keyASubchunk || !keyAInfo->success) {
+        LOGS(_log, LOG_LVL_ERROR, "keyA lookup got incorrect value " << *keyAInfo);
+        exit(-1);
+    }
+
+    if (keyBInfo->key != keyB || keyBInfo->chunk != keyBChunk || keyBInfo->subchunk != keyBSubchunk || !keyBInfo->success) {
+        LOGS(_log, LOG_LVL_ERROR, "keyB lookup got incorrect value " << *keyBInfo);
+        exit(-1);
+    }
+
+    if (keyCInfo->success) {
+        LOGS(_log, LOG_LVL_ERROR, "keyC lookup got incorrect value " << *keyCInfo);
+        exit(-1);
+    }
+
+
+
+    // TODO Add item to worker 2
+
 
     //ioService.stop(); // &&& this doesn't seem to work cleanly
     // mastT.join(); &&&

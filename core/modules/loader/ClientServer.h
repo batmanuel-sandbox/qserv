@@ -41,6 +41,7 @@ namespace loader {
 
 class CentralClient;
 
+
 class ClientServer : public ServerUdpBase {
 public:
     ClientServer(boost::asio::io_service& ioService, std::string const& host, int port, CentralClient* centralClient)
@@ -57,7 +58,8 @@ public:
                                     LoaderMsg const& inMsg,
                                     int status, std::string const& msgTxt); // TODO shows up in both MasterServer and WorkerServer
 
-    void keyInsert(std::string const& key, int chunk, int subchunk);
+    //void keyInsert(std::string const& key, int chunk, int subchunk); &&&
+    // KeyValue keyLookup(std::string const& key); &&&
 
 private:
     void _msgRecieved(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,

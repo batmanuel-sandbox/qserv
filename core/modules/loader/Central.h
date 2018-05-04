@@ -151,6 +151,8 @@ public:
 
     bool workerInfoReceive(BufferUdp::Ptr const&  data); // &&& spelling
     bool workerKeyInsertReq(LoaderMsg const& inMsg, BufferUdp::Ptr const&  data);
+    bool workerKeyInfoReq(LoaderMsg const& inMsg, BufferUdp::Ptr const&  data);
+
 
     bool isOurNameInvalid() const {
         std::lock_guard<std::mutex> lck(_ourNameMtx);
@@ -184,9 +186,14 @@ private:
     void _monitorWorkers();
 
     void _workerInfoReceive(std::unique_ptr<proto::WorkerListItem>& protoBuf);
+
     void _workerKeyInsertReq(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfoInsert>& protoBuf);
     void _forwardKeyInsertRequest(WWorkerListItem::Ptr const& target, LoaderMsg const& inMsg,
                                   std::unique_ptr<proto::KeyInfoInsert> const& protoData);
+
+    void _workerKeyInfoReq(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfoInsert>& protoBuf);
+    void _forwardKeyInfoRequest(WWorkerListItem::Ptr const& target, LoaderMsg const& inMsg,
+                                std::unique_ptr<proto::KeyInfoInsert> const& protoData);
 
 
     const std::string _hostName;
@@ -233,6 +240,7 @@ private:
 };
 
 
+/* &&&
 /// TODO Maybe base this one CentralWorker or have a common base class?
 class CentralClient : public Central {
 public:
@@ -255,16 +263,20 @@ public:
     int getWorkerPort() const { return _workerPort; }
 
 
-    void keyInsertReq(std::string const& key, int chunk, int subchunk);
-
-    void handleKeyInfo(LoaderMsg const& inMsg, BufferUdp::Ptr const& data);
+    KeyInsertReqOneShot::Ptr keyInsertReq(std::string const& key, int chunk, int subchunk);
     void handleKeyInsertComplete(LoaderMsg const& inMsg, BufferUdp::Ptr const& data);
+
+    KeyInfoReqOneShot::Ptr keyInfoReq(std::string const& key);
+    void handleKeyInfo(LoaderMsg const& inMsg, BufferUdp::Ptr const& data);
 
     std::string getOurLogId() override { return "client"; }
 
 private:
     void _keyInsertReq(std::string const& key, int chunk, int subchunk);
     void _handleKeyInsertComplete(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfo>& protoBuf);
+
+    void _keyInfoReq(std::string const& key);
+    void _handleKeyInfo(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfo>& protoBuf);
 
     const std::string _workerHostName;
     const int         _workerPort;
@@ -303,10 +315,10 @@ private:
     };
 
 
-    std::map<std::string, KeyInsertReqOneShot::Ptr> _waitingKeyMap;
-    std::mutex _waitingKeyMtx; ///< protects _waitingKeyMap
+    std::map<std::string, KeyInsertReqOneShot::Ptr> _waitingKeyInsertMap;
+    std::mutex _waitingKeyInsertMtx; ///< protects _waitingKeyInsertMap
 };
-
+*/
 
 }}} // namespace lsst::qserv::loader
 

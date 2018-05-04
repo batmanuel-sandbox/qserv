@@ -75,6 +75,8 @@ BufferUdp::Ptr WorkerServer::parseMsg(BufferUdp::Ptr const& data,
         _centralWorker->workerKeyInsertReq(inMsg, data);
         break;
     case LoaderMsg::KEY_INFO_REQ:
+        _centralWorker->workerKeyInfoReq(inMsg, data);
+        break;
     case LoaderMsg::KEY_INFO:
         LOGS(_log, LOG_LVL_ERROR, "&&& need to add handler for " << inMsg.msgKind->element);
         break;
