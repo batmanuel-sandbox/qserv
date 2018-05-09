@@ -129,91 +129,6 @@ protected:
 };
 
 
-class CentralWorker : public Central {
-public:
-    CentralWorker(boost::asio::io_service& ioService,
-                  std::string const& masterHostName, int masterPort,
-                  std::string const& hostName,       int port)
-        : Central(ioService, masterHostName, masterPort),
-          _hostName(hostName), _port(port) {
-        _server = std::make_shared<WorkerServer>(_ioService, _hostName, _port, this);
-        _monitorWorkers();
-    }
-
-    ~CentralWorker() override { _wWorkerList.reset(); }
-
-    WWorkerList::Ptr getWorkerList() const { return _wWorkerList; }
-
-    std::string getHostName() const { return _hostName; }
-    int getPort() const { return _port; }
-
-    void registerWithMaster();
-
-    bool workerInfoReceive(BufferUdp::Ptr const&  data); // &&& spelling
-    bool workerKeyInsertReq(LoaderMsg const& inMsg, BufferUdp::Ptr const&  data);
-    bool workerKeyInfoReq(LoaderMsg const& inMsg, BufferUdp::Ptr const&  data);
-
-
-    bool isOurNameInvalid() const {
-        std::lock_guard<std::mutex> lck(_ourNameMtx);
-        return _ourNameInvalid;
-    }
-
-    bool setOurName(uint32_t name) {
-        std::lock_guard<std::mutex> lck(_ourNameMtx);
-        if (_ourNameInvalid) {
-            _ourName = name;
-            _ourNameInvalid = false;
-            return true;
-        } else {
-            /// &&& add error message, check if _ourname matches name
-            return false;
-        }
-    }
-
-    uint32_t getOurName() const {
-        std::lock_guard<std::mutex> lck(_ourNameMtx);
-        return _ourName;
-    }
-
-    /// &&& TODO this is only needed for initial testing and should be deleted.
-    std::string getOurLogId() override;
-
-    void testSendBadMessage();
-
-private:
-    void _registerWithMaster();
-    void _monitorWorkers();
-
-    void _workerInfoReceive(std::unique_ptr<proto::WorkerListItem>& protoBuf);
-
-    void _workerKeyInsertReq(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfoInsert>& protoBuf);
-    void _forwardKeyInsertRequest(WWorkerListItem::Ptr const& target, LoaderMsg const& inMsg,
-                                  std::unique_ptr<proto::KeyInfoInsert> const& protoData);
-
-    void _workerKeyInfoReq(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfoInsert>& protoBuf);
-    void _forwardKeyInfoRequest(WWorkerListItem::Ptr const& target, LoaderMsg const& inMsg,
-                                std::unique_ptr<proto::KeyInfoInsert> const& protoData);
-
-
-    const std::string _hostName;
-    const int         _port;
-    WWorkerList::Ptr _wWorkerList{new WWorkerList(this)};
-
-    bool _ourNameInvalid{true}; ///< true until the name has been set by the master.
-    uint32_t _ourName; ///< name given to us by the master
-    mutable std::mutex _ourNameMtx; ///< protects _ourNameInvalid, _ourName
-
-    // TODO _range both int and string;
-    StringRange _strRange;
-    // TODO _directorIdMap
-    std::mutex _idMapMtx; ///< protect _rangeStr and _directorIdMap
-
-    std::map<std::string, ChunkSubchunk> _directorIdMap;
-
-};
-
-
 
 class CentralMaster : public Central {
 public:
@@ -225,100 +140,31 @@ public:
 
     ~CentralMaster() override { _mWorkerList.reset(); }
 
-    void addWorker(std::string const& ip, int port);
+
+    void addWorker(std::string const& ip, int port); ///< Add a new worker to the system.
+    void updateNeighbors(uint32_t workerName, NeighborsInfo nInfo);
+
+
     MWorkerListItem::Ptr getWorkerNamed(uint32_t name);
-    void setRangeUnlimited();
 
     MWorkerList::Ptr getWorkerList() const { return _mWorkerList; }
+
+    void reqWorkerKeysInfo(uint64_t msgId, std::string const& ip, short port,
+                          std::string const& ourHostName, short ourPort);
 
     std::string getOurLogId() override { return "master"; }
 
 private:
-    MWorkerList::Ptr _mWorkerList{new MWorkerList(this)};
+    void _assignNeighborIfNeeded();
 
-    std::atomic<bool> _firstWorkerRegistered{false};
+
+    MWorkerList::Ptr _mWorkerList{new MWorkerList(this)}; ///< List of workers.
+
+    std::atomic<bool> _firstWorkerRegistered{false}; ///< True when one worker has been activated.
 };
 
 
-/* &&&
-/// TODO Maybe base this one CentralWorker or have a common base class?
-class CentralClient : public Central {
-public:
-    CentralClient(boost::asio::io_service& ioService,
-                  std::string const& masterHostName, int masterPort,
-                  std::string const& workerHostName, int workerPort,
-                  std::string const& hostName, int port)
-        : Central(ioService, masterHostName, masterPort),
-          _workerHostName(workerHostName), _workerPort(workerPort),
-          _hostName(hostName), _port(port) {
-        _server = std::make_shared<ClientServer>(_ioService, _hostName, _port, this);
-    }
 
-    ~CentralClient() override = default;
-
-    std::string getHostName() const { return _hostName; }
-    int getPort() const { return _port; }
-
-    std::string getWorkerHostName() const { return _workerHostName; }
-    int getWorkerPort() const { return _workerPort; }
-
-
-    KeyInsertReqOneShot::Ptr keyInsertReq(std::string const& key, int chunk, int subchunk);
-    void handleKeyInsertComplete(LoaderMsg const& inMsg, BufferUdp::Ptr const& data);
-
-    KeyInfoReqOneShot::Ptr keyInfoReq(std::string const& key);
-    void handleKeyInfo(LoaderMsg const& inMsg, BufferUdp::Ptr const& data);
-
-    std::string getOurLogId() override { return "client"; }
-
-private:
-    void _keyInsertReq(std::string const& key, int chunk, int subchunk);
-    void _handleKeyInsertComplete(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfo>& protoBuf);
-
-    void _keyInfoReq(std::string const& key);
-    void _handleKeyInfo(LoaderMsg const& inMsg, std::unique_ptr<proto::KeyInfo>& protoBuf);
-
-    const std::string _workerHostName;
-    const int         _workerPort;
-    const std::string _hostName;
-    const int         _port;
-
-
-    /// It should keep trying this until it works, and then drop it from _waitingKeyMap.
-    struct KeyInsertReqOneShot : public DoListItem {
-        using Ptr = std::shared_ptr<KeyInsertReqOneShot>;
-        struct CommandData {
-            CommandData(CentralClient* central_, std::string const& key_, int chunk_, int subchunk_) :
-                central(central_), key(key_), chunk(chunk_), subchunk(subchunk_) {}
-            CentralClient* central;
-            std::string const& key;
-            int chunk;
-            int subchunk;
-        };
-
-        KeyInsertReqOneShot(CentralClient* central_, std::string const& key_, int chunk_, int subchunk_) :
-                   cmdData(central_, key_, chunk_, subchunk_) {
-                   _oneShot = true;
-               }
-
-        CommandData cmdData;
-        util::CommandTracked::Ptr createCommand() override {
-            struct KeyInsertReqCmd : public util::CommandTracked {
-                KeyInsertReqCmd(CommandData& cd) : cData(cd) {}
-                void action(util::CmdData*) override {
-                    cData.central->_keyInsertReq(cData.key, cData.chunk, cData.subchunk);
-                }
-                CommandData cData;
-            };
-            return std::make_shared<KeyInsertReqCmd>(cmdData);
-        }
-    };
-
-
-    std::map<std::string, KeyInsertReqOneShot::Ptr> _waitingKeyInsertMap;
-    std::mutex _waitingKeyInsertMtx; ///< protects _waitingKeyInsertMap
-};
-*/
 
 }}} // namespace lsst::qserv::loader
 

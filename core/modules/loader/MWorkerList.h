@@ -47,6 +47,14 @@ class CentralMaster;
 class LoaderMsg;
 
 
+// &&& move this declaration
+struct NeighborsInfo {
+    uint32_t neighborLeft;   ///< Neighbor with lesser values
+    uint32_t neighborRight;  ///< Neighbor with higher values
+    uint32_t recentAdds;     ///< Number of keys added to this worker recently.
+    uint32_t keyCount;       ///< Total number of keys stored on the worker.
+};
+
 
 /// Standard information for a single worker, IP address, key range, timeouts.
 class MWorkerListItem : public std::enable_shared_from_this<MWorkerListItem> {
@@ -86,6 +94,8 @@ public:
     void setRangeStr(StringRange const& strRange);
     void setAllInclusiveRange();
 
+    int setKeyCounts(NeighborsInfo const& nInfo);
+
     void flagNeedToSendList();
 
     util::CommandTracked::Ptr createCommandMaster(CentralMaster* centralM);
@@ -101,8 +111,11 @@ private:
     uint32_t _name;
     NetworkAddress::UPtr _address{new NetworkAddress("", 0)}; ///< empty string indicates address is not valid.
     TimeOut _lastContact{std::chrono::minutes(10)};  ///< Last time information was received from this worker
-    StringRange _range;  ///< min and max range for this worker.
-    mutable std::mutex _mtx; ///< protects _name, _address, _range
+    StringRange _range;       ///< min and max range for this worker.
+    NeighborsInfo _neighborsInfo; ///< information used to set neighbors.
+    mutable std::mutex _mtx;  ///< protects _name, _address, _range
+
+
 
     CentralMaster* _central;
 
@@ -115,6 +128,17 @@ private:
         util::CommandTracked::Ptr createCommand() override;
     };
     DoListItem::Ptr _sendListToWorker;
+
+    // Occasionally ask this worker for information about its list of keys, if it hasn't
+    // been heard from.
+    struct ReqWorkerKeyInfo : public DoListItem {
+        ReqWorkerKeyInfo(MWorkerListItem::Ptr const& mWorkerListItem_, CentralMaster *central_) :
+            mWorkerListItem(mWorkerListItem_), central(central_) {}
+        MWorkerListItem::WPtr mWorkerListItem;
+        CentralMaster *central;
+        util::CommandTracked::Ptr createCommand() override;
+    };
+    DoListItem::Ptr _reqWorkerKeyInfo;
     std::mutex _doListItemsMtx; ///< protects _sendListToWorker
 };
 
@@ -170,7 +194,7 @@ protected:
     uint32_t _totalNumberOfWorkers{0}; ///< total number of workers according to the master.
     mutable std::mutex _mapMtx; ///< protects _nameMap, _ipMap, _wListChanged
 
-    std::atomic<uint32_t> _sequence{1};
+    std::atomic<uint32_t> _sequenceName{1}; ///< Source of names for workers. 0 is invalid name.
 
 };
 

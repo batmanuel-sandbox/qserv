@@ -28,6 +28,7 @@
 // Qserv headers
 #include "loader/Central.h"
 #include "loader/CentralClient.h"
+#include "loader/CentralWorker.h"
 #include "loader/LoaderMsg.h"
 #include "loader/MasterServer.h"
 #include "loader/WorkerServer.h"

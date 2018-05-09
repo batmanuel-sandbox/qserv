@@ -87,6 +87,11 @@ BufferUdp::Ptr MasterServer::parseMsg(BufferUdp::Ptr const& data,
         case LoaderMsg::MAST_WORKER_ADD_REQ:
             sendData = workerAddRequest(inMsg, data, senderEndpoint);
             break;
+        case LoaderMsg::WORKER_KEYS_INFO:
+            // &&&
+            LOGS(_log, LOG_LVL_INFO, "&&& **** MasterServer::WORKER_KEYS_INFO NEEDS CODE***************************");
+            sendData = workerKeysInfo(inMsg, data, senderEndpoint);
+            break;
             // following not expected by master
         case LoaderMsg::MAST_INFO:
         case LoaderMsg::MAST_WORKER_LIST:
@@ -185,6 +190,49 @@ BufferUdp::Ptr MasterServer::workerListRequest(LoaderMsg const& inMsg, BufferUdp
 }
 
 
+BufferUdp::Ptr MasterServer::workerKeysInfo(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
+                                            boost::asio::ip::udp::endpoint const& senderEndpoint) {
+
+    std::string funcName("MasterServer::workerKeysInfo");
+    LOGS(_log, LOG_LVL_INFO, "  &&& " << funcName);
+
+    try {
+        auto protoItem = StringElement::protoParse<proto::WorkerKeysInfo>(data);
+        if (protoItem == nullptr) {
+            throw LoaderMsgErr(funcName, __FILE__, __LINE__);
+        }
+
+        NeighborsInfo nInfo;
+        auto workerName = protoItem->name();
+        nInfo.keyCount = protoItem->mapsize();
+        nInfo.recentAdds = protoItem->recentadds();
+        proto::WorkerRangeString protoRange = protoItem->range();
+        bool valid        = protoRange.valid();
+        StringRange strRange;
+        if (valid) {
+            std::string min   = protoRange.min();
+            std::string max   = protoRange.max();
+            bool unlimited = protoRange.maxunlimited();
+            strRange.setMinMax(min, max, unlimited);
+            //LOGS(_log, LOG_LVL_WARN, "&&& CentralWorker::workerInfoRecieve range=" << strRange);
+        }
+        proto::Neighbor protoLeftNeigh = protoItem->left();
+        nInfo.neighborLeft = protoLeftNeigh.name();
+
+        proto::Neighbor protoRightNeigh = protoItem->right();
+        nInfo.neighborRight = protoRightNeigh.name();
+
+        // TODO store the information, -> somewhere decide if it needs a neighbor.
+        // &&& move to separate thread.
+        _centralMaster->updateNeighbors(workerName, nInfo);
+    } catch (LoaderMsgErr &msgErr) {
+        LOGS(_log, LOG_LVL_ERROR, msgErr.what());
+        return replyMsgReceived(senderEndpoint, inMsg, LoaderMsg::STATUS_PARSE_ERR, msgErr.what());
+    }
+    return nullptr;
+}
+
+
 BufferUdp::Ptr MasterServer::workerInfoRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
                                  boost::asio::ip::udp::endpoint const& senderEndpoint) {
     LOGS(_log, LOG_LVL_INFO, "  &&& MasterServer::workerInfoRequest **************");
@@ -234,14 +282,7 @@ BufferUdp::Ptr MasterServer::workerInfoRequest(LoaderMsg const& inMsg, BufferUdp
         seItem.appendToData(sendBuf);
 
         // Send the request to the worker that asked for it.
-        /* &&&
-        auto masterHost = _centralW->getMasterHostName();
-        auto masterPort = _centralW->getMasterPort();
-        _centralW->sendBufferTo(masterHost, masterPort, sendBuf);
-        */
         _centralMaster->sendBufferTo(requestorAddr->ip, requestorAddr->port, sendBuf);
-
-
 
     } catch (LoaderMsgErr &msgErr) {
         LOGS(_log, LOG_LVL_ERROR, msgErr.what());

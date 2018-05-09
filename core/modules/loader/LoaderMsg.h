@@ -288,18 +288,20 @@ public:
 class LoaderMsg {
 public:
     enum {
-        MSG_RECEIVED = 100,    // Standard success/error response to received message.
-        MAST_INFO_REQ,         // Request some information about the master
-        MAST_INFO,             // Information about the master
-        MAST_WORKER_LIST_REQ,  // Request a list of workers from the master.
-        MAST_WORKER_LIST,      // List of all workers known by the master.
-        MAST_WORKER_INFO_REQ,  // Request information for a single worker.
-        MAST_WORKER_INFO,      // All the information the master has about one worker.
-        MAST_WORKER_ADD_REQ,   // Request the Master add the worker. MSG_RECIEVED + MAST_WORKER_INFO
-        KEY_INSERT_REQ,        // Insert a new key with info. MSG_RECEIVED + KEY_INFO
-        KEY_INSERT_COMPLETE,   // Key has been inserted and logged.
-        KEY_INFO_REQ,          // Request info for a single key.
-        KEY_INFO               // Information about a specific key. (includes file id and row)
+        MSG_RECEIVED = 100,   // Standard success/error response to received message.
+        MAST_INFO_REQ,        // Request some information about the master
+        MAST_INFO,            // Information about the master
+        MAST_WORKER_LIST_REQ, // Request a list of workers from the master.
+        MAST_WORKER_LIST,     // List of all workers known by the master.
+        MAST_WORKER_INFO_REQ, // Request information for a single worker.
+        MAST_WORKER_INFO,     // All the information the master has about one worker. TODO add key list information
+        MAST_WORKER_ADD_REQ,  // Request the Master add the worker. MSG_RECIEVED + MAST_WORKER_INFO
+        WORKER_KEYS_INFO_REQ, // Master asking a worker for information about its key-value pairs.
+        WORKER_KEYS_INFO,     // Information about number of key values, range, number of new keys.
+        KEY_INSERT_REQ,       // Insert a new key with info. MSG_RECEIVED + KEY_INFO
+        KEY_INSERT_COMPLETE,  // Key has been inserted and logged.
+        KEY_INFO_REQ,         // Request info for a single key.
+        KEY_INFO              // Information about a specific key. (includes file id and row)
     };
 
     enum {

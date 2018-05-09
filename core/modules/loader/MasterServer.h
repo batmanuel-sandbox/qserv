@@ -61,6 +61,9 @@ public:
     BufferUdp::Ptr workerInfoRequest(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
                                      boost::asio::ip::udp::endpoint const& senderEndpoint);
 
+    BufferUdp::Ptr workerKeysInfo(LoaderMsg const& inMsg, BufferUdp::Ptr const& data,
+                                                boost::asio::ip::udp::endpoint const& senderEndpoint);
+
     // &&& I'm thinking replies should only be sent on errors and always be sent to the server port. A reply
     // that gets lost in transmission is going to be a nuisance, requiring extra timeouts.
     BufferUdp::Ptr replyMsgReceived(boost::asio::ip::udp::endpoint const& senderEndpoint,

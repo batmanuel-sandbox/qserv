@@ -83,7 +83,7 @@ MWorkerListItem::Ptr MWorkerList::addWorker(std::string const& ip, int port) {
         return nullptr;
     }
     // Get an id and make new worker item
-    auto workerListItem = MWorkerListItem::create(_sequence++, address, _central);
+    auto workerListItem = MWorkerListItem::create(_sequenceName++, address, _central);
     _ipMap.insert(std::make_pair(address, workerListItem));
     _nameMap.insert(std::make_pair(workerListItem->getName(), workerListItem));
     LOGS(_log, LOG_LVL_INFO, "Added worker " << *workerListItem);
@@ -118,7 +118,7 @@ bool MWorkerList::sendListTo(uint64_t msgId, std::string const& ip, short port,
         }
     }
 
-
+    /* &&&
     // TODO: &&&(creating a client socket here is odd. Should use master socket to send or make a pool of contexts (pool of agents with contexts?)
     {
         using namespace boost::asio;
@@ -129,6 +129,8 @@ bool MWorkerList::sendListTo(uint64_t msgId, std::string const& ip, short port,
         ip::udp::endpoint endpoint = *resolver.resolve(ip::udp::v4(), ip, std::to_string(port)).begin(); // there has got to be a better way &&&
         socket.send_to(buffer(_stateListData->begin(), _stateListData->getCurrentWriteLength()), endpoint);
     }
+    */
+    _central->sendBufferTo(ip, port, *_stateListData);
 
     // See if this worker is know.
     MWorkerListItem::Ptr workerItem;
@@ -183,6 +185,11 @@ void MWorkerListItem::addDoListItems(Central *central) {
         _sendListToWorker = std::make_shared<SendListToWorker>(shared_from_this(), _central);
         _central->addDoListItem(_sendListToWorker);
     }
+    if (_reqWorkerKeyInfo == nullptr) {
+        LOGS(_log, LOG_LVL_INFO, "&&& MWorkerListItem::addDoListItems c");
+        _reqWorkerKeyInfo = std::make_shared<ReqWorkerKeyInfo>(shared_from_this(), _central);
+        _central->addDoListItem(_reqWorkerKeyInfo);
+    }
 }
 
 
@@ -217,6 +224,18 @@ void MWorkerListItem::setAllInclusiveRange() {
 }
 
 
+int MWorkerListItem::setKeyCounts(NeighborsInfo const& nInfo) {
+    std::lock_guard<std::mutex> lck(_mtx);
+    _neighborsInfo.keyCount = nInfo.keyCount;
+    _neighborsInfo.recentAdds = nInfo.recentAdds;
+    if (_neighborsInfo.neighborLeft != nInfo.neighborLeft ||
+        _neighborsInfo.neighborRight != nInfo.neighborRight) {
+        return -1; // TODO better status return values.
+    }
+    return 0;
+}
+
+
 std::ostream& operator<<(std::ostream& os, MWorkerListItem const& item) {
     os << "name=" << item._name << " address=" << *item._address << " range(" << item._range << ")";
     return os;
@@ -243,6 +262,30 @@ util::CommandTracked::Ptr MWorkerListItem::SendListToWorker::createCommand() {
     };
     LOGS(_log, LOG_LVL_INFO, "&&& SendListToWorker::createCommand");
     return std::make_shared<SendListToWorkerCmd>(central, item);
+}
+
+
+
+util::CommandTracked::Ptr MWorkerListItem::ReqWorkerKeyInfo::createCommand() {
+    auto item = mWorkerListItem.lock();
+    if (item == nullptr) {
+        // TODO: should mark set the removal flag for this doListItem
+        return nullptr;
+    }
+
+    struct ReqWorkerKeysInfoCmd : public util::CommandTracked {
+        ReqWorkerKeysInfoCmd(CentralMaster *centM_, MWorkerListItem::Ptr const& tItem_) : centM(centM_), tItem(tItem_) {}
+        void action(util::CmdData*) override {
+            LOGS(_log, LOG_LVL_INFO, "&&& ReqWorkerKeyInfoCmd::action");
+            centM->reqWorkerKeysInfo(centM->getNextMsgId(),
+                    tItem->_address->ip, tItem->_address->port,
+                    centM->getMasterHostName(), centM->getMasterPort());
+        }
+        CentralMaster *centM;
+        MWorkerListItem::Ptr tItem;
+    };
+    LOGS(_log, LOG_LVL_INFO, "&&& SendListToWorker::createCommand");
+    return std::make_shared<ReqWorkerKeysInfoCmd>(central, item);
 }
 
 

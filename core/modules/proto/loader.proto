@@ -63,8 +63,8 @@ message WorkerRange {
 
 
 message WorkerListItem {
-    required uint32 name    = 1; // worker's id number
-    optional LdrNetAddress address = 2;
+    required uint32            name     = 1; // worker's id number
+    optional LdrNetAddress     address  = 2;
     optional WorkerRangeString rangestr = 3; // TODO replace with WorkerRange
 }
 
@@ -85,9 +85,22 @@ message KeyInfo {
 
 message KeyInfoInsert {
 	required LdrNetAddress requester = 1;
-	required KeyInfo keyinfo = 2;
+	required KeyInfo       keyinfo   = 2;
 }
 
-    
+
+message Neighbor {
+	required uint32 name   = 2;
+}	
+
+
+message WorkerKeysInfo {
+    required uint32            name       = 1;
+    required uint32            mapsize    = 2;
+    required uint32            recentadds = 3;
+    required WorkerRangeString range      = 4; // TODO replace with WorkerRange
+    optional Neighbor          left       = 5;
+    required Neighbor          right      = 6;
+}
 
  

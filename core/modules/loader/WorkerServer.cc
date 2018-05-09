@@ -31,7 +31,7 @@
 // Third-party headers
 
 // Qserv headers
-#include "loader/Central.h"
+#include "loader/CentralWorker.h"
 #include "loader/LoaderMsg.h"
 #include "proto/loader.pb.h"
 #include "proto/ProtoImporter.h"
@@ -77,11 +77,12 @@ BufferUdp::Ptr WorkerServer::parseMsg(BufferUdp::Ptr const& data,
     case LoaderMsg::KEY_INFO_REQ:
         _centralWorker->workerKeyInfoReq(inMsg, data);
         break;
-    case LoaderMsg::KEY_INFO:
-        LOGS(_log, LOG_LVL_ERROR, "&&& need to add handler for " << inMsg.msgKind->element);
+    case LoaderMsg::WORKER_KEYS_INFO_REQ:
+        LOGS(_log, LOG_LVL_ERROR, "&&& need to add WORKER_KEYS_INFO_REQ handler for " << inMsg.msgKind->element);
+        _centralWorker->workerWorkerKeysInfoReq(inMsg, data);
         break;
-
     // following not expected by worker
+    case LoaderMsg::KEY_INFO:
     case LoaderMsg::MAST_INFO_REQ:
     case LoaderMsg::MAST_WORKER_LIST_REQ:
     case LoaderMsg::MAST_WORKER_INFO_REQ:
