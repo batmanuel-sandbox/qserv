@@ -31,6 +31,7 @@
 #include <mutex>
 
 // Qserv headers
+#include "loader/Updateable.h"
 #include "loader/BufferUdp.h"
 #include "loader/DoList.h"
 #include "loader/NetworkAddress.h"
@@ -49,11 +50,20 @@ class LoaderMsg;
 
 // &&& move this declaration
 struct NeighborsInfo {
-    uint32_t neighborLeft;   ///< Neighbor with lesser values
-    uint32_t neighborRight;  ///< Neighbor with higher values
-    uint32_t recentAdds;     ///< Number of keys added to this worker recently.
-    uint32_t keyCount;       ///< Total number of keys stored on the worker.
+    NeighborsInfo() = default;
+    NeighborsInfo(NeighborsInfo const&) = delete;
+    NeighborsInfo& operator=(NeighborsInfo const&) = delete;
+
+    typedef std::shared_ptr<Updatable<uint32_t>> NeighborPtr;
+    typedef std::weak_ptr<Updatable<uint32_t>> NeighborWPtr;
+    NeighborPtr neighborLeft{new Updatable<uint32_t>(0)};   ///< Neighbor with lesser values
+    NeighborPtr neighborRight{new Updatable<uint32_t>(0)};  ///< Neighbor with higher values
+    uint32_t recentAdds{0}; ///< Number of keys added to this worker recently.
+    uint32_t keyCount{0};   ///< Total number of keys stored on the worker.
 };
+
+
+
 
 
 /// Standard information for a single worker, IP address, key range, timeouts.
@@ -81,7 +91,7 @@ public:
         return *_address;
     }
     uint32_t getName() const {
-        std::lock_guard<std::mutex> lck(_mtx);
+        // std::lock_guard<std::mutex> lck(_mtx); &&&
         return _name;
     }
     StringRange getRangeString() const {
@@ -89,12 +99,18 @@ public:
         return _range;
     }
 
+    bool isActive() const { return _active; }
+
     void addDoListItems(Central *central);
 
     void setRangeStr(StringRange const& strRange);
     void setAllInclusiveRange();
 
-    int setKeyCounts(NeighborsInfo const& nInfo);
+    void setKeyCounts(NeighborsInfo const& nInfo);
+    int  getKeyCount() const;
+
+    void setRightNeighbor(MWorkerListItem::Ptr const& item);
+    void setLeftNeighbor(MWorkerListItem::Ptr const& item);
 
     void flagNeedToSendList();
 
@@ -115,7 +131,7 @@ private:
     NeighborsInfo _neighborsInfo; ///< information used to set neighbors.
     mutable std::mutex _mtx;  ///< protects _name, _address, _range
 
-
+    std::atomic<bool> _active{false}; ///< true when worker has been given a valid range, or a neighbor.
 
     CentralMaster* _central;
 
@@ -140,6 +156,90 @@ private:
     };
     DoListItem::Ptr _reqWorkerKeyInfo;
     std::mutex _doListItemsMtx; ///< protects _sendListToWorker
+
+
+    /* &&&
+    /// Create commands to set a worker's neighbor.
+    /// It should keep trying this until it works. When the worker sets the neighbor to
+    /// the target value, this object should initiate a chain reaction that destorys itself.
+    /// It is very important that the message and neighborPtr both point to
+    //  the same (left or right) neighbor.
+    class SetNeighborOneShot : public DoListItem, public UpdateNotify<uint32_t> {
+    public:
+        using Ptr = std::shared_ptr<SetNeighborOneShot>;
+
+        SetNeighborOneShot(CentralMaster* central_,
+                           MWorkerListItem::Ptr const& target_,
+                           int msg_,
+                           uint32_t neighborName_,
+                           NeighborsInfo::NeighborPtr const& neighborPtr_) :
+              central(central_), target(target_), message(msg_), neighborName(neighborName_),
+              neighborPtr(neighborPtr_) {
+            _oneShot = true;
+            auto oneShotPtr = std::static_pointer_cast<SetNeighborOneShot>(getDoListItemPtr());
+            auto updatePtr = std::static_pointer_cast<UpdateNotify<uint32_t>>(oneShotPtr);
+            neighborPtr_->registerNotify(updatePtr); // Must do this so it will call our updateNotify().
+        }
+
+        util::CommandTracked::Ptr createCommand() override;
+
+        // This is called every time the worker sends the master a value for its (left/right) neighbor.
+        // See neighborPtr_->registerNotify()
+        void updateNotify(uint32_t& oldVal, uint32_t& newVal) override {
+            if (newVal == neighborName) {
+                infoReceived(); // This should result in this oneShot DoListItem being removed->destroyed.
+            }
+        }
+
+        CentralMaster* const central;
+        MWorkerListItem::WPtr target;
+        int const message;
+        uint32_t const neighborName;
+        NeighborsInfo::NeighborWPtr neighborPtr;
+
+    };
+    */
+};
+
+
+/// Create commands to set a worker's neighbor.
+/// It should keep trying this until it works. When the worker sets the neighbor to
+/// the target value, this object should initiate a chain reaction that destorys itself.
+/// It is very important that the message and neighborPtr both point to
+//  the same (left or right) neighbor.
+class SetNeighborOneShot : public DoListItem, public UpdateNotify<uint32_t> {
+public:
+    using Ptr = std::shared_ptr<SetNeighborOneShot>;
+
+    SetNeighborOneShot(CentralMaster* central_,
+                       MWorkerListItem::Ptr const& target_,
+                       int msg_,
+                       uint32_t neighborName_,
+                       NeighborsInfo::NeighborPtr const& neighborPtr_) :
+                central(central_), target(target_), message(msg_), neighborName(neighborName_),
+                neighborPtr(neighborPtr_) {
+        _oneShot = true;
+        auto oneShotPtr = std::static_pointer_cast<SetNeighborOneShot>(getDoListItemPtr());
+        auto updatePtr = std::static_pointer_cast<UpdateNotify<uint32_t>>(oneShotPtr);
+        neighborPtr_->registerNotify(updatePtr); // Must do this so it will call our updateNotify().
+    }
+
+    util::CommandTracked::Ptr createCommand() override;
+
+    // This is called every time the worker sends the master a value for its (left/right) neighbor.
+    // See neighborPtr_->registerNotify()
+    void updateNotify(uint32_t& oldVal, uint32_t& newVal) override {
+        if (newVal == neighborName) {
+            infoReceived(); // This should result in this oneShot DoListItem being removed->destroyed.
+        }
+    }
+
+    CentralMaster* const central;
+    MWorkerListItem::WPtr target;
+    int const message;
+    uint32_t const neighborName;
+    NeighborsInfo::NeighborWPtr neighborPtr;
+
 };
 
 
@@ -164,7 +264,6 @@ public:
                     std::string const& outHostName, short ourPort);
 
     util::CommandTracked::Ptr createCommand() override;
-    // util::CommandTracked::Ptr createCommandWorker(CentralWorker* centralW); &&&
     util::CommandTracked::Ptr createCommandMaster(CentralMaster* centralM);
 
     //////////////////////////////////////////
@@ -180,6 +279,9 @@ public:
         if (iter == _nameMap.end()) { return nullptr; }
         return iter->second;
     }
+
+    std::pair<std::vector<MWorkerListItem::Ptr>, std::vector<MWorkerListItem::Ptr>>
+        getActiveInactiveWorkerLists();
 
     std::string dump() const;
 

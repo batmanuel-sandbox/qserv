@@ -141,15 +141,15 @@ void LoaderMsg::parseFromData(BufferUdp& data) {
 }
 
 
-void LoaderMsg::serializeToData(BufferUdp& data) {
+void LoaderMsg::serializeToData(BufferUdp& data) { // &&& rename to appendToData
     bool success = true;
     if (msgKind == nullptr || msgId == nullptr || senderHost == nullptr || senderPort == nullptr) {
         success = false;
     } else {
-        success &= msgKind->appendToData(data);
-        success &= msgId->appendToData(data);
-        success &= senderHost->appendToData(data);
-        success &= senderPort->appendToData(data);
+        success |= msgKind->appendToData(data);
+        success |= msgId->appendToData(data);
+        success |= senderHost->appendToData(data);
+        success |= senderPort->appendToData(data);
     }
 
     if (not success) {

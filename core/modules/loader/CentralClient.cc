@@ -53,7 +53,7 @@ namespace loader {
 
 
 void CentralClient::handleKeyInfo(LoaderMsg const& inMsg, BufferUdp::Ptr const& data) {
-    LOGS(_log, LOG_LVL_INFO, "\n\n&&& **** CentralClient::handleKeyInfo needs code ****\n\n");
+    LOGS(_log, LOG_LVL_INFO, "\n\n&&& **** CentralClient::handleKeyInfo ****\n\n");
 
     StringElement::Ptr sData = std::dynamic_pointer_cast<StringElement>(MsgElement::retrieve(*data));
     if (sData == nullptr) {

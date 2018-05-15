@@ -87,26 +87,103 @@ void CentralMaster::addWorker(std::string const& ip, int port) {
             item->setAllInclusiveRange();
         }
 
-        // TODO &&& maybe flag worker as active somehow ???
-
         item->addDoListItems(this);
         LOGS(_log, LOG_LVL_INFO, "Master::addWorker " << *item);
     }
 }
 
 
-void CentralMaster::updateNeighbors(uint32_t workerName, NeighborsInfo nInfo) {
+void CentralMaster::updateNeighbors(uint32_t workerName, NeighborsInfo const& nInfo) {
     auto item = getWorkerNamed(workerName);
-    int status = item->setKeyCounts(nInfo);
-    if (status < 0) {
-        LOGS(_log, LOG_LVL_WARN, "CentralMaster::updateNeighbors, unexpected neighbors");
-        // TODO check if reasonable, otherwise figure out what went wrong and fix it.
-        // Wait for things to converge.
-        return;
-    }
+    item->setKeyCounts(nInfo);
     _assignNeighborIfNeeded();
 }
 
+
+void CentralMaster::setWorkerNeighbor(MWorkerListItem::WPtr const& target, int message, uint32_t neighborName) {
+    // Get the target worker's network address
+    auto targetWorker = target.lock();
+    if (targetWorker == nullptr) {
+        return;
+    }
+
+    // Build and send the message
+    LoaderMsg msg(message, getNextMsgId(), getMasterHostName(), getMasterPort());
+    BufferUdp msgData;
+    msg.serializeToData(msgData);
+    UInt32Element neighborNameElem(neighborName);
+    neighborNameElem.appendToData(msgData);
+    auto addr = targetWorker->getAddress();
+    sendBufferTo(addr.ip, addr.port, msgData);
+}
+
+
+void CentralMaster::_assignNeighborIfNeeded() {
+    // Go through the list and see if all the workers are full.
+    // If they are, assign a worker to the end (rightmost) worker
+    // and increase the maximum by an order of magnitude, max 10 million.
+    // TODO Make a better algorithm, insert workers at busiest worker.
+    // TODO maybe rate limit this check.
+    std::string funcName("_assignNeighborIfNeeded");
+    // Only one thread should ever be working on this logic at a time.
+    std::lock_guard<std::mutex> lck(_assignMtx);
+    auto pair = _mWorkerList->getActiveInactiveWorkerLists();
+    std::vector<MWorkerListItem::Ptr>& activeList = pair.first;
+    std::vector<MWorkerListItem::Ptr>& inactiveList = pair.second;
+    if (inactiveList.empty()) { return; } // not much point if no workers to assign.
+    double sum = 0.0;
+    int max = 0;
+    uint32_t maxName = 0;
+    uint32_t unlimitedName = 0; // Name of the rightmost worker, unlimited upper range.
+    MWorkerListItem::Ptr unlimitedItem;
+    for(auto& item : activeList) {
+        int keyCount = item->getKeyCount();
+        sum += keyCount;
+        if (keyCount > max) {
+            max = keyCount;
+            maxName = item->getName();
+        }
+        auto range = item->getRangeString();
+        if (range.getValid() && range.getUnlimited()) {
+            if (unlimitedName != 0) {
+                LOGS(_log, LOG_LVL_ERROR, "_assignNeighborIfNeeded Multiple unlimited workers " <<
+                                           " name=" << unlimitedName <<
+                                           " name=" << item->getName());
+                throw LoaderMsgErr(funcName + " Multiple unlimited workers " +
+                        " name=" + std::to_string(unlimitedName) +
+                        " name=" + std::to_string(item->getName()),
+                        __FILE__, __LINE__);
+            }
+            unlimitedName = item->getName();
+            unlimitedItem = item;
+        }
+    }
+    double avg = sum/(double)(activeList.size());
+    LOGS(_log, LOG_LVL_INFO, "max=" << max << " maxName=" << maxName << " avg=" << avg);
+    if (avg > getMaxKeysPerWorker()) {
+        // Assign a neighbor to the rightmost worker, if there are any.
+        // TODO Probably better to assign a new neighbor next to the node with the most recent activity.
+        //      but that's much more complicated.
+        auto inactiveItem = inactiveList.front();
+        if (inactiveItem == nullptr) {
+            throw LoaderMsgErr(funcName + " _assignNeighborIfNeeded unexpected inactiveList nullptr",
+                               __FILE__, __LINE__);
+            return;
+        }
+        /// Fun part !!! &&&
+        // Sequence of events goes something like
+        // 1) left item gets message that it is getting a right neighbor, and writes it down
+        // 2) Right item get message that it is getting a left neighbor, writes it down.
+        // 3) Right connects to left item, which should be expecting it.
+        // 4) left item shifts its single largest entry to the right node.
+        // 5) right node now has a valid range, and informs master.
+        // 6) Done, as other bits should converge.
+        // TODO figure out how to detect that it didn't converge and fix it,
+        //      probably by examining the range list. CentralMaster::_mWorkerList
+        unlimitedItem->setRightNeighbor(inactiveItem);
+        inactiveItem->setLeftNeighbor(unlimitedItem);
+    }
+}
 
 MWorkerListItem::Ptr CentralMaster::getWorkerNamed(uint32_t name) {
     return _mWorkerList->getWorkerNamed(name);

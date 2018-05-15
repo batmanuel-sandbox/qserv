@@ -51,9 +51,27 @@ namespace qserv {
 namespace loader {
 
 
+
+util::CommandTracked::Ptr SetNeighborOneShot::createCommand() {
+    struct SetNeighborCmd : public util::CommandTracked {
+        SetNeighborCmd(SetNeighborOneShot::Ptr const& ptr) : oneShotData(ptr) {}
+        void action(util::CmdData*) override {
+            auto data = std::dynamic_pointer_cast<SetNeighborOneShot>(oneShotData.lock());
+            if (data != nullptr) {
+                data->central->setWorkerNeighbor(data->target, data->message, data->neighborName);
+            }
+        }
+        std::weak_ptr<SetNeighborOneShot> oneShotData;
+    };
+    auto ptr = std::dynamic_pointer_cast<SetNeighborOneShot>(getDoListItemPtr());
+    return std::make_shared<SetNeighborCmd>(ptr);
+}
+
+
+
 util::CommandTracked::Ptr MWorkerListItem::createCommandMaster(CentralMaster* centralMaster) {
     LOGS(_log, LOG_LVL_ERROR, "&&& MWorkerListItem::createCommandMaster This function needs to do something!!!!!!!!!");
-    // &&& ask worker for current range, neighbors.
+    // &&& ask worker for current range, neighbors, make sure worker is still alive
     return nullptr;
 }
 
@@ -149,6 +167,26 @@ bool MWorkerList::sendListTo(uint64_t msgId, std::string const& ip, short port,
 }
 
 
+
+
+std::pair<std::vector<MWorkerListItem::Ptr>, std::vector<MWorkerListItem::Ptr>>
+MWorkerList::getActiveInactiveWorkerLists() {
+    std::vector<MWorkerListItem::Ptr> active;
+    std::vector<MWorkerListItem::Ptr> inactive;
+    std::lock_guard<std::mutex> lck(_mapMtx);
+    for(auto const& elem : _nameMap) {
+        auto item = elem.second;
+        if (item->isActive()) {
+            active.push_back(item);
+        } else {
+            inactive.push_back(item);
+        }
+    }
+    auto pair = std::make_pair(active, inactive);
+    return pair;
+}
+
+
 // must lock _mapMtx before calling this function
 void MWorkerList::_flagListChange() {
     _wListChanged = true;
@@ -220,25 +258,88 @@ void MWorkerListItem::setAllInclusiveRange() {
     LOGS(_log, LOG_LVL_INFO, "&&& MWorkerListItem::setAllInclusiveRange for name=" << _name);
     std::lock_guard<std::mutex> lck(_mtx);
     _range.setAllInclusiveRange();
+    _active = true;  /// First worker.
     LOGS(_log, LOG_LVL_INFO, "&&& MWorkerListItem::setAllInclusiveRange " << _range);
 }
 
 
-int MWorkerListItem::setKeyCounts(NeighborsInfo const& nInfo) {
+void MWorkerListItem::setKeyCounts(NeighborsInfo const& nInfo) { // &&& change name to updateNeighbor
     std::lock_guard<std::mutex> lck(_mtx);
     _neighborsInfo.keyCount = nInfo.keyCount;
     _neighborsInfo.recentAdds = nInfo.recentAdds;
-    if (_neighborsInfo.neighborLeft != nInfo.neighborLeft ||
-        _neighborsInfo.neighborRight != nInfo.neighborRight) {
-        return -1; // TODO better status return values.
+
+    auto old = _neighborsInfo.neighborLeft->get();
+    if (old != 0) {
+        LOGS(_log, LOG_LVL_WARN, "Worker=" << _name <<
+                "neighborLeft changing from valid old=" << old <<
+                " to new=" << nInfo.neighborLeft->get());
     }
-    return 0;
+    if (old != nInfo.neighborLeft->get()) {
+        LOGS(_log, LOG_LVL_INFO, "Worker=" << _name <<
+                "neighborLeft=" << nInfo.neighborLeft->get());
+    }
+    _neighborsInfo.neighborLeft->update(nInfo.neighborLeft->get());
+
+
+    old = _neighborsInfo.neighborRight->get();
+    if (old != 0) {
+        LOGS(_log, LOG_LVL_WARN, "Worker=" << _name <<
+                "neighborRight changing from valid old=" << old <<
+                " to new=" << nInfo.neighborRight->get());
+    }
+    if (old != nInfo.neighborRight->get()) {
+
+        LOGS(_log, LOG_LVL_INFO, "Worker=" << _name <<
+                "neighborRight=" << nInfo.neighborRight->get());
+    }
+    _neighborsInfo.neighborRight->update(nInfo.neighborRight->get());
+}
+
+
+int MWorkerListItem::getKeyCount() const {
+    return _neighborsInfo.keyCount;
 }
 
 
 std::ostream& operator<<(std::ostream& os, MWorkerListItem const& item) {
     os << "name=" << item._name << " address=" << *item._address << " range(" << item._range << ")";
     return os;
+}
+
+
+/// Set this worker's RIGHT neighbor to the worker described in 'item'.
+void MWorkerListItem::setRightNeighbor(MWorkerListItem::Ptr const& item) {
+    // Create a one shot to send a message to the worker.
+    // we know it has worked when the worker sends a message back saying it
+    // has the correct right neighbor.
+    LOGS(_log, LOG_LVL_INFO," &&& MWorkerListItem::setRightNeighbor");
+
+    int msg = LoaderMsg::WORKER_RIGHT_NEIGHBOR;
+    uint32_t name = item->getName();
+    NeighborsInfo::NeighborPtr right = _neighborsInfo.neighborRight;
+    std::shared_ptr<SetNeighborOneShot> oneShot =
+        std::make_shared<SetNeighborOneShot>(_central,
+                                             shared_from_this(),
+                                             LoaderMsg::WORKER_RIGHT_NEIGHBOR,
+                                             item->getName(),
+                                             _neighborsInfo.neighborRight);
+    _central->addDoListItem(oneShot);
+}
+
+
+void MWorkerListItem::setLeftNeighbor(MWorkerListItem::Ptr const& item) {
+    // Create a one shot to send a message to the worker.
+    // we know it has worked when the worker sends a message back saying it
+    // has the correct left neighbor.
+    LOGS(_log, LOG_LVL_INFO," &&& MWorkerListItem::setLeftNeighbor");
+
+    SetNeighborOneShot::Ptr oneShot =
+        std::make_shared<SetNeighborOneShot>(_central,
+                                             shared_from_this(),
+                                             LoaderMsg::WORKER_LEFT_NEIGHBOR,
+                                             item->getName(),
+                                             _neighborsInfo.neighborLeft);
+    _central->addDoListItem(oneShot);
 }
 
 

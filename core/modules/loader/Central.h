@@ -140,9 +140,10 @@ public:
 
     ~CentralMaster() override { _mWorkerList.reset(); }
 
+    int getMaxKeysPerWorker() const { return _maxKeysPerWorker; }
 
     void addWorker(std::string const& ip, int port); ///< Add a new worker to the system.
-    void updateNeighbors(uint32_t workerName, NeighborsInfo nInfo);
+    void updateNeighbors(uint32_t workerName, NeighborsInfo const& nInfo);
 
 
     MWorkerListItem::Ptr getWorkerNamed(uint32_t name);
@@ -154,8 +155,13 @@ public:
 
     std::string getOurLogId() override { return "master"; }
 
+    void setWorkerNeighbor(MWorkerListItem::WPtr const& target, int message, uint32_t neighborName);
+
 private:
     void _assignNeighborIfNeeded();
+    std::mutex _assignMtx; ///< Protects critical region where worker's can be set to active.
+
+    std::atomic<int> _maxKeysPerWorker{1000};
 
 
     MWorkerList::Ptr _mWorkerList{new MWorkerList(this)}; ///< List of workers.

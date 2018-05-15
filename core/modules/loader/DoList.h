@@ -70,13 +70,12 @@ private:
 };
 
 
-class DoListItem {
+/// Children of this class must be created with shared pointers.
+class DoListItem :public std::enable_shared_from_this<DoListItem> {
 public:
     using Ptr = std::shared_ptr<DoListItem>;
 
     DoListItem() = default;
-
-
 
     DoListItem(DoListItem const&) = delete;
     DoListItem& operator=(DoListItem const&) = delete;
@@ -120,6 +119,10 @@ public:
     void setNeedInfo() {
         std::lock_guard<std::mutex> lock(_mtx);
         _needInfo = true;
+    }
+
+    DoListItem::Ptr getDoListItemPtr() {
+        return shared_from_this();
     }
 
     virtual util::CommandTracked::Ptr createCommand()=0;

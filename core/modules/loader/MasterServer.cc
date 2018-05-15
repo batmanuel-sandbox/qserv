@@ -88,8 +88,7 @@ BufferUdp::Ptr MasterServer::parseMsg(BufferUdp::Ptr const& data,
             sendData = workerAddRequest(inMsg, data, senderEndpoint);
             break;
         case LoaderMsg::WORKER_KEYS_INFO:
-            // &&&
-            LOGS(_log, LOG_LVL_INFO, "&&& **** MasterServer::WORKER_KEYS_INFO NEEDS CODE***************************");
+            LOGS(_log, LOG_LVL_INFO, "&&& **** MasterServer::WORKER_KEYS_INFO");
             sendData = workerKeysInfo(inMsg, data, senderEndpoint);
             break;
             // following not expected by master
@@ -217,10 +216,10 @@ BufferUdp::Ptr MasterServer::workerKeysInfo(LoaderMsg const& inMsg, BufferUdp::P
             //LOGS(_log, LOG_LVL_WARN, "&&& CentralWorker::workerInfoRecieve range=" << strRange);
         }
         proto::Neighbor protoLeftNeigh = protoItem->left();
-        nInfo.neighborLeft = protoLeftNeigh.name();
+        nInfo.neighborLeft->update(protoLeftNeigh.name());
 
         proto::Neighbor protoRightNeigh = protoItem->right();
-        nInfo.neighborRight = protoRightNeigh.name();
+        nInfo.neighborRight->update(protoRightNeigh.name());
 
         // TODO store the information, -> somewhere decide if it needs a neighbor.
         // &&& move to separate thread.

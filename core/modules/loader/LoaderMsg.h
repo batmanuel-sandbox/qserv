@@ -301,7 +301,9 @@ public:
         KEY_INSERT_REQ,       // Insert a new key with info. MSG_RECEIVED + KEY_INFO
         KEY_INSERT_COMPLETE,  // Key has been inserted and logged.
         KEY_INFO_REQ,         // Request info for a single key.
-        KEY_INFO              // Information about a specific key. (includes file id and row)
+        KEY_INFO,             // Information about a specific key. (includes file id and row)
+        WORKER_LEFT_NEIGHBOR, // Assign a left neighbor to a worker.
+        WORKER_RIGHT_NEIGHBOR // Assign a right neighbor to a worker.
     };
 
     enum {
